@@ -42,3 +42,15 @@ covent::task<void> covent::Session::connect(struct sockaddr * addr) {
 void covent::Session::write(std::string_view data) {
     return;
 }
+
+void covent::Session::read_cb(struct bufferevent *bev) {
+    // Create and start the read task.
+}
+
+void covent::Session::write_cb(struct bufferevent *bev) {
+    // Not actually sure!
+}
+
+void covent::Session::event_cb(struct bufferevent *bev, short flags) {
+    // Process flags (close, etc).
+}

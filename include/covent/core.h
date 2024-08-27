@@ -44,10 +44,10 @@ namespace covent {
             return m_loop;
         }
 
-    private:
         void read_cb(struct bufferevent * bev);
         void write_cb(struct bufferevent * bev);
         void event_cb(struct bufferevent * bev, short flags);
+    private:
         id_type m_id;
         Loop & m_loop;
         std::unique_ptr<struct bufferevent, std::function<void(struct bufferevent *)>> m_buf;
