@@ -11,11 +11,11 @@
 
 namespace covent {
     template<typename T>
-    class Listener : covent::ListenerBase {
+    class Listener : public covent::ListenerBase {
     public:
         Listener(covent::Loop & l, unsigned short p) : covent::ListenerBase(l, p) {}
-        void create_session() override {
-            m_loop.add(std::make_unique<T>(m_loop));
+        void create_session(evutil_socket_t sock) override {
+            m_loop.add(std::make_unique<T>(m_loop, sock));
         }
     };
 }

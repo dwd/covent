@@ -6,7 +6,6 @@
 #define COVENT_LOOP_H
 
 #include <covent/base.h>
-#include <covent/coroutine.h>
 #include <covent/core.h>
 #include <sys/socket.h>
 #include <vector>
@@ -64,7 +63,7 @@ namespace covent {
 
         void shutdown();
 
-        Session::id_type add(std::unique_ptr<Session> &&);
+        Session & add(std::unique_ptr<Session> &&);
 
         void listen(ListenerBase &);
 

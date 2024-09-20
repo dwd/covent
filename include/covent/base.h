@@ -10,7 +10,7 @@
 namespace covent {
     class Loop;
     class Session;
-    template<typename T>
+    template<typename T, typename L=Loop>
     struct task;
     template<typename T>
     struct instant_task;

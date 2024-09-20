@@ -38,10 +38,10 @@ covent::Loop &covent::Loop::main_loop() {
 }
 
 void covent::Loop::run_once(bool block) {
-
     auto flags = EVLOOP_ONCE | EVLOOP_NO_EXIT_ON_EMPTY;
     block = !set_next_break() && block;
     if (!block) flags |= EVLOOP_NONBLOCK;
+    if (m_shutdown) return;
     event_base_loop(m_event_base.get(), flags);
     if (m_shutdown) return;
     for (;;) {
@@ -68,14 +68,14 @@ void covent::Loop::run_once(bool block) {
 }
 
 void covent::Loop::run_until(std::function<bool()> && fn) {
-    while (!m_sessions.empty() || !m_pending_actions.empty()) {
+    while (!m_shutdown) {
         if (fn()) break;
         run_once(true);
     }
 }
 
 void covent::Loop::run_until_complete() {
-    run_until([](){ return false; });
+    run_until([this](){ return m_sessions.empty() && m_pending_actions.empty(); });
 }
 
 void covent::Loop::run_until_complete(Session & session) {
@@ -86,14 +86,15 @@ void covent::Loop::run_until_complete(Session & session) {
 };
 
 void covent::Loop::run() {
-    for(;;) {
+    while(!m_shutdown) {
         run_once(true);
     }
 }
 
 void covent::Loop::shutdown() {
     m_shutdown = true;
-    event_base_loopbreak(m_event_base.get());
+    struct timeval tv{0,0};
+    event_base_loopexit(m_event_base.get(), &tv);
 }
 
 covent::Loop::~Loop() {
@@ -171,7 +172,7 @@ void covent::Loop::listen(ListenerBase & listener) {
     auto l = evconnlistener_new_bind(m_event_base.get(), listener_connect_cb, &listener, LEV_OPT_CLOSE_ON_FREE | LEV_OPT_REUSEABLE, -1, listener.sockaddr(), sizeof(struct sockaddr_storage));
 }
 
-covent::Session::id_type covent::Loop::add(std::unique_ptr<Session> && optr) {
+covent::Session & covent::Loop::add(std::unique_ptr<Session> && optr) {
     auto const & [it, foo] = m_sessions.emplace(std::move(optr));
-    return (*it)->id();
+    return *(*it);
 }

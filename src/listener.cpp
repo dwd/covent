@@ -16,5 +16,5 @@ const struct sockaddr *covent::ListenerBase::sockaddr() const {
 }
 
 void covent::ListenerBase::session_connected(int sock, struct sockaddr *addr, int len) {
-    create_session();
+    create_session(sock);
 }

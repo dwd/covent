@@ -9,6 +9,7 @@
 #include "covent/base.h"
 #include <coroutine>
 #include <exception>
+#include <stdexcept>
 #include <optional>
 
 namespace covent {
@@ -42,7 +43,7 @@ namespace covent {
             using handle_type = std::__n4861::coroutine_handle<promise<R, V>>;
 
             R get_return_object() {
-                return handle_type::from_promise(*this);
+                return R{handle_type::from_promise(*this)};
             }
 
             std::suspend_never return_value(V v) {
@@ -61,17 +62,21 @@ namespace covent {
             using handle_type = std::__n4861::coroutine_handle<promise<R, void>>;
 
             R get_return_object() {
-                return handle_type::from_promise(*this);
+                return R{handle_type::from_promise(*this)};
             }
 
             std::suspend_never return_void() {
                 return {};
             }
+
+            void get() {
+                this->resolve();
+            }
         };
 
         template<typename T>
         struct task_awaiter {
-            T &task;
+            T const &task;
 
             bool await_ready() {
                 return task.handle.done();
@@ -81,12 +86,12 @@ namespace covent {
                 return task.handle.promise().get();
             }
 
-            auto await_suspend(std::coroutine_handle<> coro) {
+            std::coroutine_handle<> await_suspend(std::coroutine_handle<> coro) {
                 // coro is the currently executing coroutine on this thread.
                 // We're going to start our new one, but first we'll let it know who its parent is and let it set up its execution context:
                 task.handle.promise().parent = coro;
                 task.start();
-                if (task.handle.finished()) {
+                if (task.handle.done()) {
                     return coro;
                 }
                 return task.handle;
@@ -102,65 +107,146 @@ namespace covent {
 
         handle_type handle;
 
+        bool start() const {
+            handle.resume();
+            return handle.done();
+        }
+        bool done() const {
+            return handle.done();
+        }
+        value_type get() const {
+            if (!done()) throw std::logic_error("coroutine not done yet");
+            return handle.promise().get();
+        }
+
         explicit instant_task(handle_type h) : handle(h) {}
-        ~instant_task() { handle.destroy(); }
+        instant_task(instant_task && other) : handle(other.handle) {
+            other.handle = nullptr;
+        }
+        ~instant_task() { if (handle) handle.destroy(); }
+
+        auto operator co_await() const {
+            return detail::task_awaiter(*this);
+        }
     };
 
     namespace detail {
 
-        template<typename A>
+        template<typename A, typename P, typename AT = decltype(std::declval<A>().operator co_await()), typename VT = decltype(std::declval<AT>().await_resume())>
         struct await_transformer {
-            using value_type = decltype(A{}.await_resume());
+            using awaiter_type = AT;
+            using value_type = VT;
             std::optional<value_type> ret;
             std::optional<instant_task<void>> runner;
-            A real;
+            A const & real;
 
-            explicit await_transformer(A && a) : real(a) {}
+            explicit await_transformer(A const & a) : real(a) {}
 
-            instant_task<void> wrapper(std::coroutine_handle<> coro) {
+            instant_task<void> wrapper(std::coroutine_handle<P> coro) {
                 // TODO : No longer running, should mark suspended.
                 ret = co_await real;
                 // TODO: Shuffle virtual callstack, schedule call.
-                coro.resume();
+                auto * l = coro.promise().loop;
+                l->defer([coro](){ coro.resume(); });
             }
 
             auto await_ready() {
-                return real.await_ready();
+                // We always return false here to force our mini coroutine to run.
+                // It'd be nice to avoid this,
+                return false;
             }
             auto await_resume() {
-                return ret;
+                return ret.value();
             }
-            auto await_suspend(std::coroutine_handle<> coro) {
-                if (real.await_ready()) return coro;
-                runner = wrapper(coro);
+            auto await_suspend(std::coroutine_handle<P> coro) {
+                runner.emplace(wrapper(coro));
                 return runner.value().handle;
             }
         };
 
-        template<typename R>
+        template<typename A, typename P, typename AT>
+        struct await_transformer<A, P, AT, void> {
+            using awaiter_type = AT;
+            using value_type = void;
+            std::optional<instant_task<void>> runner;
+            A const & real;
+
+            explicit await_transformer(A const & a) : real(a) {}
+
+            instant_task<void> wrapper(std::coroutine_handle<P> coro) {
+                // TODO : No longer running, should mark suspended.
+                co_await real;
+                // TODO: Shuffle virtual callstack, schedule call.
+                auto * l = coro.promise().loop;
+                l->defer([coro](){ coro.resume(); });
+            }
+
+            auto await_ready() {
+                // We always return false here to force our mini coroutine to run.
+                // It'd be nice to avoid this,
+                return false;
+            }
+            auto await_resume() {
+                return;
+            }
+            auto await_suspend(std::coroutine_handle<P> coro) {
+                runner.emplace(wrapper(coro));
+                return runner.value().handle;
+            }
+        };
+
+        // Force the loop into a template parameter to side-step needing to declare it fully.
+        template<typename R, typename L=Loop>
         struct wrapped_promise : promise<R> {
+            L * loop;
+
+            wrapped_promise() : loop(&L::thread_loop()) {}
+            wrapped_promise(L & l) : loop(&l) {}
+
             using handle_type = std::__n4861::coroutine_handle<wrapped_promise<R>>;
             R get_return_object() {
                 return R{handle_type::from_promise(*this)};
             }
 
             template<typename A>
-            auto await_transform(A && a) {
-                return await_transformer{a};
+            auto await_transform(A const & a) {
+                return await_transformer<A, wrapped_promise<R>>{a};
             }
         };
     }
 
-    template<typename R>
+    template<typename R, typename L>
     struct task {
         using value_type = R;
         using promise_type = detail::wrapped_promise<task<value_type>>;
         using handle_type = std::coroutine_handle<promise_type>;
 
         handle_type handle;
+        bool start() const {
+            if (handle.promise().loop == &L::thread_loop()) {
+                handle.resume();
+            } else {
+                auto * l = handle.promise().loop;
+                l->defer([this](){ handle.resume(); });
+            }
+            return handle.done();
+        }
+        bool done() const {
+            return handle.done();
+        }
+        value_type get() const {
+            if (!done()) throw std::logic_error("coroutine not done yet");
+            return handle.promise().get();
+        }
 
         explicit task(handle_type h) : handle(h) {}
-        ~task() { handle.destroy(); }
+        task(task && other) : handle(other.handle) {
+            other.handle = nullptr;
+        }
+        ~task() { if (handle) handle.destroy(); }
+        auto operator co_await() const {
+            return detail::task_awaiter(*this);
+        }
     };
 }
 

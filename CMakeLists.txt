@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.28)
 project(covent)
 option(COVENT_BUILD_TESTS "Build the Covent tests" OFF)
+set(COVENT_SIGSLOT_INCLUDE "/usr/include" CACHE STRING "Where to find my sigslot")
 
 set(CMAKE_CXX_STANDARD 26)
 
@@ -18,7 +19,7 @@ add_library(covent SHARED src/covent.cpp include/covent/covent.h
         src/listener.cpp)
 target_include_directories(covent PUBLIC include)
 target_include_directories(covent SYSTEM PUBLIC /home/dwd/src/SigSlot/)
-target_include_directories(covent PUBLIC ${EVENT_INCLUDE_DIRS})
+target_include_directories(covent PUBLIC ${EVENT_INCLUDE_DIRS} ${COVENT_SIGSLOT_INCLUDE})
 target_link_libraries(covent PUBLIC ${EVENT_LDFLAGS})
 
 # Tests
