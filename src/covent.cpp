@@ -1,4 +1,3 @@
-#include "covent/covent.h"
 #include "covent/loop.h"
 #include "covent/core.h"
 #include <event2/event.h>
@@ -27,14 +26,14 @@ covent::Loop &covent::Loop::thread_loop() {
     if (s_main_loop) {
         return *s_main_loop;
     }
-    throw std::logic_error("No loop found for thread (or main)");
+    throw covent_logic_error("No loop found for thread (or main)");
 }
 
 covent::Loop &covent::Loop::main_loop() {
     if (s_main_loop) {
         return *s_main_loop;
     }
-    throw std::logic_error("No loop found for main");
+    throw covent_logic_error("No loop found for main");
 }
 
 void covent::Loop::run_once(bool block) {
@@ -47,7 +46,7 @@ void covent::Loop::run_once(bool block) {
     for (;;) {
         std::list<std::function<void()>> run_now;
         {
-            std::lock_guard<std::recursive_mutex> l_(m_scheduler_mutex);
+            std::scoped_lock<std::recursive_mutex> l_(m_scheduler_mutex);
             struct timeval now;
             gettimeofday(&now, nullptr);
             while (!m_pending_actions.empty()) {
@@ -67,7 +66,7 @@ void covent::Loop::run_once(bool block) {
     }
 }
 
-void covent::Loop::run_until(std::function<bool()> && fn) {
+void covent::Loop::run_until(std::function<bool()> const & fn) {
     while (!m_shutdown) {
         if (fn()) break;
         run_once(true);
@@ -78,7 +77,7 @@ void covent::Loop::run_until_complete() {
     run_until([this](){ return m_sessions.empty() && m_pending_actions.empty(); });
 }
 
-void covent::Loop::run_until_complete(Session & session) {
+void covent::Loop::run_until_complete(Session const & session) {
     auto session_id = session.id();
     run_until([this, session_id]() {
         return m_sessions.contains(session_id);
@@ -127,7 +126,7 @@ bool covent::Loop::set_next_break() {
 }
 
 void covent::Loop::defer(std::function<void()> &&fn, struct timeval seconds) {
-    std::lock_guard<std::recursive_mutex> l_(m_scheduler_mutex);
+    std::scoped_lock<std::recursive_mutex> l_(m_scheduler_mutex);
     struct timeval now;
     gettimeofday(&now, nullptr);
     struct timeval when = now;
@@ -163,13 +162,13 @@ void covent::Loop::defer(std::function<void()> &&fn) {
 
 namespace {
     void listener_connect_cb(struct evconnlistener *, evutil_socket_t sock, struct sockaddr * addr, int len, void * arg) {
-        auto listener = reinterpret_cast<covent::ListenerBase *>(arg);
+        auto listener = static_cast<covent::ListenerBase *>(arg);
         listener->session_connected(sock, addr, len);
     }
 }
 
 void covent::Loop::listen(ListenerBase & listener) {
-    auto l = evconnlistener_new_bind(m_event_base.get(), listener_connect_cb, &listener, LEV_OPT_CLOSE_ON_FREE | LEV_OPT_REUSEABLE, -1, listener.sockaddr(), sizeof(struct sockaddr_storage));
+    evconnlistener_new_bind(m_event_base.get(), listener_connect_cb, &listener, LEV_OPT_CLOSE_ON_FREE | LEV_OPT_REUSEABLE, -1, listener.sockaddr(), sizeof(struct sockaddr_storage));
 }
 
 covent::Session & covent::Loop::add(std::unique_ptr<Session> && optr) {

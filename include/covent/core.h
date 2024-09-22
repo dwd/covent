@@ -17,6 +17,7 @@
 #include <sys/socket.h>
 #include <covent/coroutine.h>
 #include <covent/base.h>
+#include <covent/sockaddr-cast.h>
 #include <sigslot/sigslot.h>
 
 struct bufferevent;
@@ -24,7 +25,7 @@ struct bufferevent;
 namespace covent {
     class Session {
     public:
-        Session(Loop & loop);
+        explicit Session(Loop & loop);
         Session(Loop & loop, evutil_socket_t sock);
         Session() = delete;
         Session(Session const &) = delete;
@@ -40,10 +41,11 @@ namespace covent {
         void write(std::string_view data); // Fire and forget writing.
         [[nodiscard]] task<void> flush(std::string_view data = {}); // Awaitable writing.
 
-        task<void> connect(struct sockaddr *, size_t);
+        task<void> connect(const struct sockaddr *, size_t);
         template<typename S>
         auto connect(S * addr) {
-            return connect(reinterpret_cast<struct sockaddr *>(addr), sizeof(S));
+            auto * base_addr = sockaddr_cast<AF_UNSPEC>(addr);
+            return connect(base_addr, sizeof(S));
         }
 
         id_type id() const {
@@ -75,11 +77,15 @@ namespace covent {
         ListenerBase(Loop & loop, unsigned short port);
 
         const struct sockaddr * sockaddr() const;
-        void session_connected(evutil_socket_t sock, struct sockaddr * addr, int len);
+        void session_connected(evutil_socket_t sock, const struct sockaddr * addr, int len);
 
         virtual void create_session(evutil_socket_t) = 0;
+        Loop & loop() {
+            return m_loop;
+        }
+        virtual ~ListenerBase() = default;
 
-    protected:
+    private:
         Loop & m_loop;
         unsigned short m_port;
         struct sockaddr_storage m_addr;

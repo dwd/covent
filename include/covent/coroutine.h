@@ -7,6 +7,7 @@
 
 
 #include "covent/base.h"
+#include "exceptions.h"
 #include <coroutine>
 #include <exception>
 #include <stdexcept>
@@ -20,11 +21,11 @@ namespace covent {
             std::exception_ptr eptr;
             std::coroutine_handle<> parent;
 
-            std::suspend_always initial_suspend() {
+            std::suspend_always initial_suspend() const {
                 return {};
             }
 
-            std::suspend_always final_suspend() noexcept {
+            std::suspend_always final_suspend() const noexcept {
                 return {};
             }
 
@@ -115,12 +116,12 @@ namespace covent {
             return handle.done();
         }
         value_type get() const {
-            if (!done()) throw std::logic_error("coroutine not done yet");
+            if (!done()) throw covent_logic_error("coroutine not done yet");
             return handle.promise().get();
         }
 
         explicit instant_task(handle_type h) : handle(h) {}
-        instant_task(instant_task && other) : handle(other.handle) {
+        instant_task(instant_task && other) noexcept : handle(other.handle) {
             other.handle = nullptr;
         }
         ~instant_task() { if (handle) handle.destroy(); }
@@ -201,7 +202,7 @@ namespace covent {
             L * loop;
 
             wrapped_promise() : loop(&L::thread_loop()) {}
-            wrapped_promise(L & l) : loop(&l) {}
+            explicit wrapped_promise(L & l) : loop(&l) {}
 
             using handle_type = std::__n4861::coroutine_handle<wrapped_promise<R>>;
             R get_return_object() {
@@ -235,12 +236,12 @@ namespace covent {
             return handle.done();
         }
         value_type get() const {
-            if (!done()) throw std::logic_error("coroutine not done yet");
+            if (!done()) throw covent_logic_error("coroutine not done yet");
             return handle.promise().get();
         }
 
         explicit task(handle_type h) : handle(h) {}
-        task(task && other) : handle(other.handle) {
+        task(task && other) noexcept : handle(other.handle) {
             other.handle = nullptr;
         }
         ~task() { if (handle) handle.destroy(); }

@@ -22,7 +22,9 @@ add_library(covent SHARED src/covent.cpp include/covent/covent.h
         include/covent/core.h
         include/covent/listener.h
         src/session.cpp
-        src/listener.cpp)
+        src/listener.cpp
+        include/covent/sockaddr-cast.h
+        include/covent/exceptions.h)
 target_include_directories(covent PUBLIC include)
 target_include_directories(covent PUBLIC ${EVENT_INCLUDE_DIRS} ${COVENT_SIGSLOT_INCLUDE})
 target_link_libraries(covent PUBLIC ${EVENT_LDFLAGS})

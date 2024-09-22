@@ -57,9 +57,9 @@ namespace covent {
 
         void run_once(bool block); // Run a single cycle, including deferred calls.
 
-        void run_until(std::function<bool()> &&);
+        void run_until(std::function<bool()> const&);
         void run_until_complete(); // Run single cycles until no sessions or deferred calls exist. A listening session will never end!
-        void run_until_complete(Session &); // Run single cycles until this session is closed.
+        void run_until_complete(Session const &); // Run single cycles until this session is closed.
 
         void shutdown();
 
