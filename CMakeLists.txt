@@ -1,9 +1,15 @@
 cmake_minimum_required(VERSION 3.28)
 project(covent)
 option(COVENT_BUILD_TESTS "Build the Covent tests" OFF)
+option(COVENT_SENTRY "Use Sentry (also for tests)" OFF)
 set(COVENT_SIGSLOT_INCLUDE "/usr/include" CACHE STRING "Where to find my sigslot")
 
 set(CMAKE_CXX_STANDARD 26)
+
+if (COVENT_SENTRY)
+    set(SENTRY_BACKEND inproc)
+    add_subdirectory(sentry-native)
+endif()
 
 find_package(PkgConfig)
 
@@ -43,6 +49,12 @@ if(COVENT_BUILD_TESTS)
     )
     target_include_directories(covent-test SYSTEM PUBLIC include)
     target_link_libraries(covent-test PUBLIC covent GTest::gtest)
+
+    if(COVENT_SENTRY)
+        target_include_directories(covent-test SYSTEM PRIVATE sentry-native/include)
+        target_compile_definitions(covent-test PRIVATE DWD_GTEST_SENTRY=1)
+        target_link_libraries(covent-test PRIVATE sentry::sentry)
+    endif()
 
     include(GoogleTest)
     gtest_discover_tests(covent-test)
