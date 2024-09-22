@@ -24,7 +24,6 @@ add_library(covent SHARED src/covent.cpp include/covent/covent.h
         src/session.cpp
         src/listener.cpp)
 target_include_directories(covent PUBLIC include)
-target_include_directories(covent SYSTEM PUBLIC /home/dwd/src/SigSlot/)
 target_include_directories(covent PUBLIC ${EVENT_INCLUDE_DIRS} ${COVENT_SIGSLOT_INCLUDE})
 target_link_libraries(covent PUBLIC ${EVENT_LDFLAGS})
 
