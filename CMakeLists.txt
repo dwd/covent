@@ -48,6 +48,8 @@ if(COVENT_BUILD_TESTS)
     )
     target_include_directories(covent-test SYSTEM PUBLIC include)
     target_link_libraries(covent-test PUBLIC covent GTest::gtest)
+    target_link_options(covent-test PUBLIC --coverage)
+    target_compile_options(covent-test PUBLIC --coverage)
 
     if(COVENT_SENTRY)
         target_include_directories(covent-test SYSTEM PRIVATE sentry-native/include)

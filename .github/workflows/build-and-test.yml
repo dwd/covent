@@ -36,7 +36,7 @@ jobs:
       - name: Build Wrapper
         run: build-wrapper-linux-x86-64 --out-dir sonar-out cmake --build sonar-build
       - name: CMake Tests
-        run: cd ./sonar-build/ && ./metre-test
+        run: cd ./sonar-build/ && ./covent-test
         env:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
       - name: Show coverage
