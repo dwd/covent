@@ -7,27 +7,28 @@
 #include <event2/bufferevent.h>
 #include <event2/event.h>
 #include <event2/buffer.h>
+#include <iostream>
 
 namespace{
     covent::Session::id_type next_id = 0;
     void bev_read_cb(bufferevent * bev, void * arg) {
-        auto * session = reinterpret_cast<covent::Session *>(arg);
+        auto * session = static_cast<covent::Session *>(arg);
         session->read_cb(bev);
     }
     void bev_write_cb(bufferevent * bev, void * arg) {
-        auto * session = reinterpret_cast<covent::Session *>(arg);
+        auto * session = static_cast<covent::Session *>(arg);
         session->write_cb(bev);
     }
     void bev_event_cb(bufferevent * bev, short flags, void * arg) {
-        auto *session = reinterpret_cast<covent::Session *>(arg);
+        auto *session = static_cast<covent::Session *>(arg);
         session->event_cb(bev, flags);
     }
 }
 
-covent::Session::Session(Loop & loop): m_loop(loop), m_id(next_id++) {
+covent::Session::Session(Loop & loop): m_id(next_id++), m_loop(loop) {
 }
 
-covent::Session::Session(covent::Loop &loop, int sock): m_loop(loop), m_id(next_id++) {
+covent::Session::Session(covent::Loop &loop, int sock): m_id(next_id++), m_loop(loop) {
     m_base_buf = bufferevent_socket_new(m_loop.event_base(), sock, BEV_OPT_CLOSE_ON_FREE);
     m_top = m_base_buf;
     bufferevent_setcb(m_top, bev_read_cb, bev_write_cb, bev_event_cb, this);
@@ -43,15 +44,16 @@ covent::Session::~Session() {
     }
 }
 
-covent::task<void> covent::Session::connect(struct sockaddr * addr, size_t addrlen) {
-    if (m_base_buf) throw std::logic_error("Already connected?");
+covent::task<void> covent::Session::connect(const struct sockaddr * addr, size_t addrlen) {
+    if (m_base_buf) throw covent_logic_error("Already connected?");
     m_base_buf = bufferevent_socket_new(m_loop.event_base(), -1, BEV_OPT_CLOSE_ON_FREE);
     m_top = m_base_buf;
-    if (0 > bufferevent_socket_connect(m_base_buf, addr, addrlen)) {
-        m_base_buf = m_top = nullptr;
-        throw std::runtime_error("Some kind of connection failure");
-    }
+    std::cout << "Connecting to [" << address_tostring(addr) << "]:" << address_toport(addr) << std::endl;
     bufferevent_setcb(m_top, bev_read_cb, bev_write_cb, bev_event_cb, this);
+    if (0 > bufferevent_socket_connect(m_base_buf, addr, static_cast<int>(addrlen))) {
+        m_base_buf = m_top = nullptr;
+        throw covent_runtime_error(std::strerror(errno));
+    }
     bufferevent_enable(m_top, EV_READ | EV_WRITE);
     co_await connected;
     co_return;
@@ -79,28 +81,22 @@ void covent::Session::read_cb(struct bufferevent *bev) {
         // Create and start the process task.
         // We'll try first using whatever contiguous data we have to hand:
         size_t len;
-        struct evbuffer *buf;
-        while ((len = evbuffer_get_contiguous_space(buf = bufferevent_get_input(m_top))) > 0) {
+        struct evbuffer *buf = bufferevent_get_input(m_top);
+        while ((len = evbuffer_get_contiguous_space(buf)) > 0) {
             if (len == 0) break;
-            m_processor.emplace(process({reinterpret_cast<char *>(evbuffer_pullup(buf, len)), len}));
-            if (m_processor->start()) {
-                auto used_any = m_processor->get();
-                m_processor.reset();
-                if (!used_any) break;
-            } else {
-                return;
-            }
+            m_processor.emplace(process({reinterpret_cast<char *>(evbuffer_pullup(buf, static_cast<ssize_t>(len))), len}));
+            if (!m_processor->start()) return;
+            auto used_any = m_processor->get();
+            m_processor.reset();
+            if (!used_any) break;
             // TODO : Check closed
         }
-        while ((len = evbuffer_get_length(buf = bufferevent_get_input(m_top))) > 0) {
+        while ((len = evbuffer_get_length(buf)) > 0) {
             m_processor.emplace(process({reinterpret_cast<char *>(evbuffer_pullup(buf, -1)), len}));
-            if (m_processor->start()) {
-                auto used_any = m_processor->get();
-                m_processor.reset();
-                if (!used_any) break;
-            } else {
-                return;
-            }
+            if (!m_processor->start()) return;
+            auto used_any = m_processor->get();
+            m_processor.reset();
+            if (!used_any) break;
             // TODO : Check closed
         }
     }

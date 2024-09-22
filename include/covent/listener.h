@@ -15,7 +15,7 @@ namespace covent {
     public:
         Listener(covent::Loop & l, unsigned short p) : covent::ListenerBase(l, p) {}
         void create_session(evutil_socket_t sock) override {
-            m_loop.add(std::make_unique<T>(m_loop, sock));
+            loop().add(std::make_unique<T>(loop(), sock));
         }
     };
 }

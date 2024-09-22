@@ -1,5 +1,7 @@
 name: Build and Test
-on: [push]
+on:
+  - push
+  - pull_request
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -32,7 +34,7 @@ jobs:
       - name: SonarQube install
         uses: SonarSource/sonarcloud-github-c-cpp@v3
       - name: Configure Sonar Build
-        run: mkdir sonar-build && cmake -S . -B sonar-build -DCOVENT_SENTRY=ON -DCOVENT_BUILD_TESTS=ON -DCOVENT_SIGSLOT_INCLUDE=sigslot
+        run: mkdir sonar-build && cmake -S . -B sonar-build -DCOVENT_SENTRY=ON -DCOVENT_BUILD_TESTS=ON -DCOVENT_SIGSLOT_INCLUDE=sigslot -DCOVENT_COVERAGE=ON
       - name: Build Wrapper
         run: build-wrapper-linux-x86-64 --out-dir sonar-out cmake --build sonar-build
       - name: CMake Tests

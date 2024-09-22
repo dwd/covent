@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.28)
 project(covent)
 option(COVENT_BUILD_TESTS "Build the Covent tests" OFF)
 option(COVENT_SENTRY "Use Sentry (also for tests)" OFF)
+option(COVENT_COVERAGE "Coverage support on library and tests" OFF)
 set(COVENT_SIGSLOT_INCLUDE "/usr/include" CACHE STRING "Where to find my sigslot")
 
 set(CMAKE_CXX_STANDARD 26)
@@ -22,10 +23,17 @@ add_library(covent SHARED src/covent.cpp include/covent/covent.h
         include/covent/core.h
         include/covent/listener.h
         src/session.cpp
-        src/listener.cpp)
+        src/listener.cpp
+        include/covent/sockaddr-cast.h
+        include/covent/exceptions.h)
 target_include_directories(covent PUBLIC include)
 target_include_directories(covent PUBLIC ${EVENT_INCLUDE_DIRS} ${COVENT_SIGSLOT_INCLUDE})
 target_link_libraries(covent PUBLIC ${EVENT_LDFLAGS})
+
+if(COVENT_COVERAGE)
+    target_link_options(covent PUBLIC --coverage)
+    target_compile_options(covent PUBLIC --coverage)
+endif()
 
 # Tests
 if(COVENT_BUILD_TESTS)
@@ -48,8 +56,10 @@ if(COVENT_BUILD_TESTS)
     )
     target_include_directories(covent-test SYSTEM PUBLIC include)
     target_link_libraries(covent-test PUBLIC covent GTest::gtest)
-    target_link_options(covent-test PUBLIC --coverage)
-    target_compile_options(covent-test PUBLIC --coverage)
+    if(COVENT_COVERAGE)
+        target_link_options(covent-test PUBLIC --coverage)
+        target_compile_options(covent-test PUBLIC --coverage)
+    endif()
 
     if(COVENT_SENTRY)
         target_include_directories(covent-test SYSTEM PRIVATE sentry-native/include)
