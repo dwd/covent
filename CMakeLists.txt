@@ -46,6 +46,7 @@ if(COVENT_BUILD_TESTS)
             test/main.cpp
             test/coro.cpp
             test/echo.cpp
+            test/http.cpp
     )
     target_include_directories(covent-test SYSTEM PUBLIC include)
     target_link_libraries(covent-test PUBLIC covent GTest::gtest)

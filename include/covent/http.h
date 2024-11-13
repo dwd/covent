@@ -45,13 +45,19 @@ namespace covent {
             FieldRef & operator = (std::string const &);
         };
 
+        class Request;
         class Response {
         public:
-            Response();
+            Response(evhttp_request *);
 
-            FieldRef & operator [] (std::string_view const &);
-            FieldRef const & operator [] (std::string_view const &) const;
-            std::string const & body() const;
+            [[nodiscard]] int status() const;
+
+            FieldRef operator [] (std::string const &);
+            ConstFieldRef operator [] (std::string const &) const;
+            [[nodiscard]] std::string_view body() const;
+
+        private:
+            evhttp_request * m_request;
         };
         class Request {
         public:
@@ -65,7 +71,9 @@ namespace covent {
 
             void complete();
 
-            std::string_view uri() const;
+            std::string const & uri() const {
+                return m_uri;
+            }
             Method const method;
         private:
             std::string m_uri;

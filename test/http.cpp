@@ -35,6 +35,11 @@ TEST(HTTP, RequestSimple) {
     covent::Loop loop;
     covent::http::Request req(covent::http::Request::Method::GET, "https://www.google.com");
     auto task = req();
-    loop.run_until_complete();
+    task.start();
+    loop.run_until([&task]() {
+        return task.done();
+    });
     EXPECT_TRUE(task.done());
+    auto resp = task.get();
+    EXPECT_EQ(resp.status(), 200);
 }

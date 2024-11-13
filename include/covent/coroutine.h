@@ -53,21 +53,21 @@ namespace covent {
 
         template<typename R, typename V=R::value_type>
         struct promise : promise_base<R> {
-            V value;
+            std::optional<V> value;
             using handle_type = std::__n4861::coroutine_handle<promise<R, V>>;
 
             R get_return_object() {
                 return R{handle_type::from_promise(*this)};
             }
 
-            std::suspend_never return_value(V v) {
-                value = v;
+            std::suspend_never return_value(V && v) {
+                value.emplace(v);
                 return {};
             }
 
             auto get() {
                 this->resolve();
-                return value;
+                return value.value();
             }
         };
 
