@@ -15,13 +15,17 @@ namespace echo {
     class ServerSession : public covent::Session {
     public:
         ServerSession(covent::Loop & l, evutil_socket_t sock) : covent::Session(l, sock) {
-            std::cout << "Created session" << std::endl;
+            std::cout << "Created server session" << std::endl;
+        }
+        ~ServerSession() {
+            std::cout << "Destroyed server session" << std::endl;
         }
 
         covent::task<bool> process(std::string_view const & data) override {
             std::cout << "Got " << data.length() << " bytes" << std::endl;
             data_rx_server = data;
             co_await this->flush(data);
+            std::cout << "Flushed " << data.length() << " bytes" << std::endl;
             used(data.length());
             co_return true;
         }
@@ -33,13 +37,15 @@ namespace echo {
 
         covent::task<bool> process(std::string_view const & data) override {
             loop().shutdown();
-            std::cout << "Echo " << data.length() << " bytes" << std::endl;
+            std::cout << "Echo " << data.length() << " bytes" << std::endl <<std::flush;
             data_rx_client = data;
             used(data.length());
             loop().defer([]() {
+                std::cout << "Shutting down my thread" <<std::endl << std::flush;
                 covent::Loop::thread_loop().shutdown();
             });
             other.defer([&other = other]() {
+                std::cout << "Shutting down other thread" <<std::endl << std::flush;
                 other.shutdown();
             });
             co_return true;

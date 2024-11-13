@@ -1,0 +1,6 @@
+# This file is managed by Conan, contents will be overwritten.
+# To keep your changes, remove these comment lines, but the plugin won't be able to modify your requirements
+
+requirements:
+  - "libevent/2.1.12"
+  - "sigslot/1.0@dwd/testing"

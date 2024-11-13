@@ -25,7 +25,20 @@ namespace covent {
                 return {};
             }
 
-            std::suspend_always final_suspend() const noexcept {
+            struct final_awaiter
+            {
+                bool await_ready() noexcept { return false; }
+                void await_resume() noexcept {}
+                template<typename P>
+                std::coroutine_handle<> await_suspend(std::coroutine_handle<P> h) noexcept
+                {
+                    if (auto parent = h.promise().parent; parent)
+                        return parent;
+                    else
+                        return std::noop_coroutine();
+                }
+            };
+            final_awaiter final_suspend() const noexcept {
                 return {};
             }
 
@@ -91,7 +104,6 @@ namespace covent {
                 // coro is the currently executing coroutine on this thread.
                 // We're going to start our new one, but first we'll let it know who its parent is and let it set up its execution context:
                 task.handle.promise().parent = coro;
-                task.start();
                 if (task.handle.done()) {
                     return coro;
                 }
@@ -106,7 +118,7 @@ namespace covent {
         using promise_type = detail::promise<instant_task<value_type>>;
         using handle_type = std::coroutine_handle<promise_type>;
 
-        handle_type handle;
+        handle_type handle = nullptr;
 
         bool start() const {
             handle.resume();
@@ -120,9 +132,15 @@ namespace covent {
             return handle.promise().get();
         }
 
+        instant_task() = default;
         explicit instant_task(handle_type h) : handle(h) {}
         instant_task(instant_task && other) noexcept : handle(other.handle) {
             other.handle = nullptr;
+        }
+        auto & operator = (instant_task && other) {
+            handle = other.handle;
+            other.handle = nullptr;
+            return *this;
         }
         ~instant_task() { if (handle) handle.destroy(); }
 
@@ -138,7 +156,7 @@ namespace covent {
             using awaiter_type = AT;
             using value_type = VT;
             std::optional<value_type> ret;
-            std::optional<instant_task<void>> runner;
+            instant_task<void> runner;
             A const & real;
 
             explicit await_transformer(A const & a) : real(a) {}
@@ -160,8 +178,8 @@ namespace covent {
                 return ret.value();
             }
             auto await_suspend(std::coroutine_handle<P> coro) {
-                runner.emplace(wrapper(coro));
-                return runner.value().handle;
+                runner = wrapper(coro);
+                return runner.handle;
             }
         };
 
@@ -169,7 +187,7 @@ namespace covent {
         struct await_transformer<A, P, AT, void> {
             using awaiter_type = AT;
             using value_type = void;
-            std::optional<instant_task<void>> runner;
+            instant_task<void> runner;
             A const & real;
 
             explicit await_transformer(A const & a) : real(a) {}
@@ -179,7 +197,9 @@ namespace covent {
                 co_await real;
                 // TODO: Shuffle virtual callstack, schedule call.
                 auto * l = coro.promise().loop;
-                l->defer([coro](){ coro.resume(); });
+                l->defer([coro](){
+                    coro.resume();
+                });
             }
 
             auto await_ready() {
@@ -191,8 +211,8 @@ namespace covent {
                 return;
             }
             auto await_suspend(std::coroutine_handle<P> coro) {
-                runner.emplace(wrapper(coro));
-                return runner.value().handle;
+                runner = wrapper(coro);
+                return runner.handle;
             }
         };
 
@@ -244,7 +264,9 @@ namespace covent {
         task(task && other) noexcept : handle(other.handle) {
             other.handle = nullptr;
         }
-        ~task() { if (handle) handle.destroy(); }
+        ~task() {
+            if (handle) handle.destroy();
+        }
         auto operator co_await() const {
             return detail::task_awaiter(*this);
         }

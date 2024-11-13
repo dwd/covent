@@ -19,6 +19,7 @@
 #include <covent/base.h>
 #include <covent/sockaddr-cast.h>
 #include <sigslot/sigslot.h>
+#include "future.h"
 
 struct bufferevent;
 
@@ -68,8 +69,8 @@ namespace covent {
         // This might be the same as above, but more likely a TLS (or other filter).
         struct bufferevent * m_top = nullptr;
         std::optional<task<bool>> m_processor;
-        sigslot::signal<bool> connected;
-        sigslot::signal<bool> written;
+        future<void> connected;
+        future<void> written;
     };
 
     class ListenerBase {

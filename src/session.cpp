@@ -66,6 +66,7 @@ void covent::Session::write(std::string_view data) {
 
 covent::task<void> covent::Session::flush(std::string_view data) {
     if (!data.empty()) write(data);
+    bufferevent_flush(m_top, EV_WRITE, BEV_FLUSH);
     co_await written;
     co_return;
 }
@@ -74,42 +75,45 @@ void covent::Session::used(size_t len) {
     evbuffer_drain(bufferevent_get_input(m_top), len);
 }
 
-void covent::Session::read_cb(struct bufferevent *bev) {
+void covent::Session::read_cb(struct bufferevent *) {
     if (m_processor.has_value()) {
         // Wait until it's done.
-    } else {
-        // Create and start the process task.
-        // We'll try first using whatever contiguous data we have to hand:
-        size_t len;
-        struct evbuffer *buf = bufferevent_get_input(m_top);
-        while ((len = evbuffer_get_contiguous_space(buf)) > 0) {
-            if (len == 0) break;
-            m_processor.emplace(process({reinterpret_cast<char *>(evbuffer_pullup(buf, static_cast<ssize_t>(len))), len}));
-            if (!m_processor->start()) return;
-            auto used_any = m_processor->get();
+        if (m_processor->done()) {
             m_processor.reset();
-            if (!used_any) break;
-            // TODO : Check closed
+        } else {
+            return;
         }
-        while ((len = evbuffer_get_length(buf)) > 0) {
-            m_processor.emplace(process({reinterpret_cast<char *>(evbuffer_pullup(buf, -1)), len}));
-            if (!m_processor->start()) return;
-            auto used_any = m_processor->get();
-            m_processor.reset();
-            if (!used_any) break;
-            // TODO : Check closed
-        }
+    }
+    // Create and start the process task.
+    // We'll try first using whatever contiguous data we have to hand:
+    size_t len;
+    struct evbuffer *buf = bufferevent_get_input(m_top);
+    while ((len = evbuffer_get_contiguous_space(buf)) > 0) {
+        m_processor.emplace(process({reinterpret_cast<char *>(evbuffer_pullup(buf, static_cast<ssize_t>(len))), len}));
+        if (!m_processor->start()) return;
+        auto used_any = m_processor->get();
+        m_processor.reset();
+        if (!used_any) break;
+        // TODO : Check closed
+    }
+    while ((len = evbuffer_get_length(buf)) > 0) {
+        m_processor.emplace(process({reinterpret_cast<char *>(evbuffer_pullup(buf, -1)), len}));
+        if (!m_processor->start()) return;
+        auto used_any = m_processor->get();
+        m_processor.reset();
+        if (!used_any) break;
+        // TODO : Check closed
     }
 }
 
-void covent::Session::write_cb(struct bufferevent *bev) {
-    this->written(true);
+void covent::Session::write_cb(struct bufferevent *) {
+    this->written.resolve();
     // Not actually sure!
 }
 
-void covent::Session::event_cb(struct bufferevent *bev, short flags) {
+void covent::Session::event_cb(struct bufferevent *, short flags) {
     if (flags & BEV_EVENT_CONNECTED) {
-        this->connected(true);
+        this->connected.resolve();
     }
     // Process flags (close, etc).
 }
