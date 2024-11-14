@@ -12,6 +12,7 @@ endif()
 
 find_package(Libevent)
 find_package(SigSlot)
+find_package(unbound)
 
 add_library(covent SHARED src/covent.cpp include/covent/covent.h
         include/covent/base.h
@@ -27,9 +28,10 @@ add_library(covent SHARED src/covent.cpp include/covent/covent.h
         src/http/fieldref.cpp
         src/http/request.cpp
         include/covent/future.h
-        src/http/response.cpp)
+        src/http/response.cpp
+        src/dns/dns.cc)
 target_include_directories(covent PUBLIC include)
-target_link_libraries(covent PUBLIC libevent::libevent sigslot::sigslot)
+target_link_libraries(covent PUBLIC libevent::libevent sigslot::sigslot unbound::unbound)
 
 if(COVENT_COVERAGE)
     target_link_options(covent PUBLIC --coverage)
@@ -47,6 +49,8 @@ if(COVENT_BUILD_TESTS)
             test/coro.cpp
             test/echo.cpp
             test/http.cpp
+            test/dns-utils.cc
+            test/resolver.cc
     )
     target_include_directories(covent-test SYSTEM PUBLIC include)
     target_link_libraries(covent-test PUBLIC covent GTest::gtest)

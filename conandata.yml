@@ -4,3 +4,4 @@
 requirements:
   - "libevent/2.1.12"
   - "sigslot/1.0@dwd/testing"
+  - "unbound/1.22.0@dwd/metre"
