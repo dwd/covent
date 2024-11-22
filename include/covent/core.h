@@ -19,6 +19,7 @@
 #include <covent/base.h>
 #include <covent/sockaddr-cast.h>
 #include <sigslot/sigslot.h>
+#include <openssl/types.h>
 #include "future.h"
 
 struct bufferevent;
@@ -41,6 +42,8 @@ namespace covent {
         virtual task<bool> process(std::string_view const & data) = 0;
         void write(std::string_view data); // Fire and forget writing.
         [[nodiscard]] task<void> flush(std::string_view data = {}); // Awaitable writing.
+        SSL * ssl() const;
+        void ssl(SSL * s, bool connecting);
 
         task<void> connect(const struct sockaddr *, size_t);
         template<typename S>

@@ -63,13 +63,13 @@ TEST(Echo, listen) {
                     try {
                         std::cout << "Thread..." << std::endl;
                         covent::Loop clientLoop;
-                        auto &cl = clientLoop.add(std::make_unique<echo::ClientSession>(clientLoop, serverLoop));
+                        auto cl = clientLoop.add(std::make_shared<echo::ClientSession>(clientLoop, serverLoop));
                         struct sockaddr_in6 sin6 {
                             .sin6_family = AF_INET6,
                             .sin6_port = htons(2007),
                             .sin6_addr = IN6ADDR_LOOPBACK_INIT,
                         };
-                        auto task = cl.connect(&sin6);
+                        auto task = cl->connect(&sin6);
                         std::cout << "Connect start" << std::endl;
                         if (!task.start()) {
                             std::cout << "Waiting for connect" << std::endl;
@@ -77,7 +77,7 @@ TEST(Echo, listen) {
                         }
                         std::cout << "Connect end: " << task.done() << std::endl;
                         task.get();
-                        cl.write(echo::test_data);
+                        cl->write(echo::test_data);
                         clientLoop.run();
                         std::cout << "Probably written?" << std::endl;
                     } catch (std::exception &e) {

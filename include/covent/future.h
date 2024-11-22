@@ -15,7 +15,6 @@ namespace covent {
     public:
         future() = default;
         future(future const &) = delete;
-        future(future && f) = delete;
 
         template<typename ...Args>
         void resolve(Args && ...v) {

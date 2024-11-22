@@ -3,6 +3,7 @@
 //
 
 #include <covent/loop.h>
+#include <covent/gather.h>
 #include "gtest/gtest.h"
 
 namespace run_single {
@@ -70,4 +71,124 @@ TEST(Coro, run_suspend) {
     loop.run_until_complete();
     EXPECT_EQ(i, 33);
     EXPECT_TRUE(task.done());
+}
+
+namespace {
+    covent::instant_task<void *> my_promise() {
+        auto * promise = &co_await covent::own_promise<covent::instant_task<void *>::promise_type>();
+        co_return static_cast<void *>(promise);
+    }
+    covent::task<void *> my_promise2() {
+        auto * promise = &co_await covent::own_promise<covent::task<void *>::promise_type>();
+        co_return static_cast<void *>(promise);
+    }
+}
+
+TEST(Coro, introspection) {
+    auto task = my_promise();
+    task.start();
+    EXPECT_EQ(task.done(), true);
+    auto ret = task.get();
+    EXPECT_EQ(ret, &task.handle.promise());
+}
+
+namespace {
+    sigslot::signal<int> sigslot_signal;
+    sigslot::signal<std::string &> sigslot_signal_str;
+    covent::instant_task<int> sigslot_test_instant() {
+        co_return co_await sigslot_signal;
+    }
+    covent::task<int> sigslot_test() {
+        co_return co_await sigslot_signal;
+    }
+    covent::task<std::string&> sigslot_test_str() {
+        auto & ref = co_await sigslot_signal_str;
+        co_return ref;
+    }
+}
+
+TEST(CoroSigslot, sigslot_test_instant) {
+    auto task = sigslot_test_instant();
+    auto t1 = task.start();
+    EXPECT_FALSE(t1);
+    sigslot_signal(42);
+    EXPECT_TRUE(task.done());
+    EXPECT_EQ(task.get(), 42);
+}
+
+TEST(CoroSigslot, sigslot_test) {
+    covent::Loop loop;
+    auto task = sigslot_test();
+    auto t1 = task.start();
+    EXPECT_FALSE(t1);
+    sigslot_signal(42);
+    loop.run_until_complete();
+    EXPECT_TRUE(task.done());
+    EXPECT_EQ(task.get(), 42);
+}
+
+TEST(CoroSigslot, sigslot_test_str) {
+    covent::Loop loop;
+    bool completed = false;
+    auto task = sigslot_test_str();
+    auto handle = task.on_completed([&completed]() {
+        completed = true;
+    });
+    auto t1 = task.start();
+    EXPECT_FALSE(t1);
+    EXPECT_FALSE(completed);
+    std::string test_result = "Test result";
+    sigslot_signal_str(test_result);
+    loop.run_until_complete();
+    EXPECT_TRUE(task.done());
+    EXPECT_TRUE(completed);
+    auto & result = task.get();
+    EXPECT_EQ(result, "Test result");
+    EXPECT_EQ(&result, &test_result);
+}
+
+namespace {
+    covent::task<int> first() {
+        co_return 1;
+    }
+    covent::task<int> second() {
+        co_return 2;
+    }
+}
+
+TEST(CoroGather, gather) {
+    covent::Loop loop;
+    auto task = covent::gather(first(), second());
+    task.start();
+    while (!task.done()) loop.run_until_complete();
+    auto [one, two] = task.get();
+    EXPECT_EQ(one, 1);
+    EXPECT_EQ(two, 2);
+}
+
+namespace {
+    covent::task<void> inner() {
+        co_await covent::own_promise<covent::task<void>::promise_type>();
+        throw std::runtime_error("Whoops");
+    }
+    covent::task<void> outer() {
+        co_await inner();
+    }
+}
+
+TEST(CoroThrow, single) {
+    covent::Loop loop;
+    auto task = inner();
+    task.start();
+    EXPECT_TRUE(task.done());
+    EXPECT_ANY_THROW(task.get());
+}
+
+TEST(CoroThrow, nested) {
+    covent::Loop loop;
+    auto task = outer();
+    task.start();
+    loop.run_until_complete();
+    EXPECT_TRUE(task.done());
+    EXPECT_ANY_THROW(task.get());
 }

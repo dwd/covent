@@ -8,29 +8,71 @@
 
 #include "covent/base.h"
 #include "exceptions.h"
+#include "temp.h"
 #include <coroutine>
 #include <exception>
 #include <stdexcept>
 #include <optional>
+#include <memory>
+#include <sigslot/sigslot.h>
+// #include <sentry.h>
 
 namespace covent {
+
+    // Usage: auto & my_promise = co_await own_promise<covent::task<bool>::promise_type>();
+    template<typename P>
+    struct own_promise
+    {
+        mutable P * promise;
+        bool await_ready() const noexcept {
+            return false; // Say we'll suspend to get await_suspend called.
+        }
+        P & await_resume() const noexcept {
+            return *promise;
+        }
+        bool await_suspend(std::coroutine_handle<P> h) const noexcept {
+            promise = &h.promise();
+            return false; // Never actually suspend.
+        }
+        auto & operator co_await() const {
+            return *this;
+        }
+    };
+
     namespace detail {
+        class Stack {
+            int i = 0;
+//            sentry_transaction_t * trans = nullptr;
+//            sentry_span_t * span = nullptr;
+        };
 
         template<typename R>
         struct promise_base {
+            static inline thread_local std::weak_ptr<Stack> thread_stack = {};
             std::exception_ptr eptr;
             std::coroutine_handle<> parent;
+            std::shared_ptr<Stack> stack;
+            sigslot::signal<> completed;
 
-            std::suspend_always initial_suspend() const {
+            std::suspend_always initial_suspend() {
+                this->stack = thread_stack.lock();
+                if (!this->stack) {
+                    stack = std::make_shared<Stack>();
+                    restack();
+                }
                 return {};
+            }
+
+            void restack() const {
+                thread_stack = this->stack;
             }
 
             struct final_awaiter
             {
-                bool await_ready() noexcept { return false; }
-                void await_resume() noexcept {}
+                bool await_ready() const noexcept { return false; }
+                void await_resume() const noexcept {}
                 template<typename P>
-                std::coroutine_handle<> await_suspend(std::coroutine_handle<P> h) noexcept
+                std::coroutine_handle<> await_suspend(std::coroutine_handle<P> h) const noexcept
                 {
                     if (auto parent = h.promise().parent; parent)
                         return parent;
@@ -38,7 +80,8 @@ namespace covent {
                         return std::noop_coroutine();
                 }
             };
-            final_awaiter final_suspend() const noexcept {
+            final_awaiter final_suspend() noexcept {
+                completed.emit();
                 return {};
             }
 
@@ -53,19 +96,19 @@ namespace covent {
 
         template<typename R, typename V=R::value_type>
         struct promise : promise_base<R> {
-            std::optional<V> value;
+            covent::temp<V> value;
             using handle_type = std::__n4861::coroutine_handle<promise<R, V>>;
 
             R get_return_object() {
                 return R{handle_type::from_promise(*this)};
             }
 
-            std::suspend_never return_value(V && v) {
-                value.emplace(v);
+            std::suspend_never return_value(V v) {
+                value.assign(v);
                 return {};
             }
 
-            auto get() {
+            V get() {
                 this->resolve();
                 return value.value();
             }
@@ -113,7 +156,7 @@ namespace covent {
     }
 
     template<typename R>
-    struct instant_task {
+    struct [[nodiscard]] instant_task {
         using value_type = R;
         using promise_type = detail::promise<instant_task<value_type>>;
         using handle_type = std::coroutine_handle<promise_type>;
@@ -131,13 +174,17 @@ namespace covent {
             if (!done()) throw covent_logic_error("coroutine not done yet");
             return handle.promise().get();
         }
+        template<typename... Args>
+        auto on_completed(Args... a) {
+            return this->handle.promise().completed.connect(a...);
+        }
 
         instant_task() = default;
         explicit instant_task(handle_type h) : handle(h) {}
         instant_task(instant_task && other) noexcept : handle(other.handle) {
             other.handle = nullptr;
         }
-        auto & operator = (instant_task && other) {
+        auto & operator = (instant_task && other) noexcept {
             handle = other.handle;
             other.handle = nullptr;
             return *this;
@@ -152,52 +199,20 @@ namespace covent {
     namespace detail {
 
         template<typename A, typename P, typename AT = decltype(std::declval<A>().operator co_await()), typename VT = decltype(std::declval<AT>().await_resume())>
-        struct await_transformer {
+        struct await_transformer_base {
             using awaiter_type = AT;
             using value_type = VT;
-            std::optional<value_type> ret;
+            covent::temp<value_type> ret;
             instant_task<void> runner;
-            A const & real;
+            covent::temp<A &> real;
 
-            explicit await_transformer(A const & a) : real(a) {}
+            explicit await_transformer_base(covent::temp<A&> && a) : real(std::move(a)) {}
 
-            instant_task<void> wrapper(std::coroutine_handle<P> coro) {
-                // TODO : No longer running, should mark suspended.
-                ret = co_await real;
-                // TODO: Shuffle virtual callstack, schedule call.
-                auto * l = coro.promise().loop;
-                l->defer([coro](){ coro.resume(); });
-            }
-
-            auto await_ready() {
-                // We always return false here to force our mini coroutine to run.
-                // It'd be nice to avoid this,
-                return false;
-            }
-            auto await_resume() {
-                return ret.value();
-            }
-            auto await_suspend(std::coroutine_handle<P> coro) {
-                runner = wrapper(coro);
-                return runner.handle;
-            }
-        };
-
-        template<typename A, typename P, typename AT>
-        struct await_transformer<A, P, AT, void> {
-            using awaiter_type = AT;
-            using value_type = void;
-            instant_task<void> runner;
-            A const & real;
-
-            explicit await_transformer(A const & a) : real(a) {}
-
-            instant_task<void> wrapper(std::coroutine_handle<P> coro) {
-                // TODO : No longer running, should mark suspended.
-                co_await real;
+            void resume(std::coroutine_handle<P> coro) {
                 // TODO: Shuffle virtual callstack, schedule call.
                 auto * l = coro.promise().loop;
                 l->defer([coro](){
+                    coro.promise().restack();
                     coro.resume();
                 });
             }
@@ -207,12 +222,48 @@ namespace covent {
                 // It'd be nice to avoid this,
                 return false;
             }
-            auto await_resume() {
-                return;
+            VT await_resume() {
+                runner.get();
+                return ret.value();
+            }
+        };
+
+        template<typename A, typename P, typename AT = decltype(std::declval<A>().operator co_await()), typename VT = decltype(std::declval<AT>().await_resume())>
+        struct await_transformer : public await_transformer_base<A, P, AT, VT> {
+            using await_transformer_base<A,P,AT,VT>::await_transformer_base;
+            instant_task<void> wrapper(std::coroutine_handle<P> coro) {
+                // TODO : No longer running, should mark suspended.
+                auto & p = co_await own_promise<covent::instant_task<void>::promise_type>();
+                try {
+                    this->ret.assign(co_await this->real.value());
+                } catch (...) {
+                    p.unhandled_exception();
+                }
+                this->resume(coro);
             }
             auto await_suspend(std::coroutine_handle<P> coro) {
-                runner = wrapper(coro);
-                return runner.handle;
+                this->runner = wrapper(coro);
+                return this->runner.handle;
+            }
+        };
+
+        template<typename A, typename P, typename AT>
+        struct await_transformer<A, P, AT, void> : public await_transformer_base<A, P , AT, void> {
+            using await_transformer_base<A,P,AT,void>::await_transformer_base;
+            instant_task<void> wrapper(std::coroutine_handle<P> coro) {
+                // TODO : No longer running, should mark suspended.
+                auto & p = co_await own_promise<covent::instant_task<void>::promise_type>();
+                try {
+                    co_await this->real.value();
+                    this->ret.assign();
+                } catch (...) {
+                    p.unhandled_exception();
+                }
+                this->resume(coro);
+            }
+            auto await_suspend(std::coroutine_handle<P> coro) {
+                this->runner = wrapper(coro);
+                return this->runner.handle;
             }
         };
 
@@ -230,20 +281,33 @@ namespace covent {
             }
 
             template<typename A>
-            auto await_transform(A const & a) {
-                return await_transformer<A, wrapped_promise<R>>{a};
+            auto await_transform(A & a) {
+                covent::temp<A &> aa;
+                aa.assign(a);
+                return await_transformer<A, wrapped_promise<R>>{std::move(aa)};
+            }
+            template<typename A>
+            auto await_transform(const A & a) {
+                covent::temp<const A &> aa;
+                aa.assign(a);
+                return await_transformer<const A, wrapped_promise<R>>{std::move(aa)};
+            }
+
+            auto const & await_transform(const own_promise<wrapped_promise> & a) {
+                return a;
             }
         };
     }
 
     template<typename R, typename L>
-    struct task {
+    struct [[nodiscard]] task {
         using value_type = R;
         using promise_type = detail::wrapped_promise<task<value_type>>;
         using handle_type = std::coroutine_handle<promise_type>;
 
         handle_type handle;
         bool start() const {
+            if (!handle) throw std::logic_error("No such coroutine");
             if (handle.promise().loop == &L::thread_loop()) {
                 handle.resume();
             } else {
@@ -253,6 +317,7 @@ namespace covent {
             return handle.done();
         }
         bool done() const {
+            if (!handle) throw std::logic_error("No such coroutine");
             return handle.done();
         }
         value_type get() const {
@@ -260,6 +325,7 @@ namespace covent {
             return handle.promise().get();
         }
 
+        task() : handle(nullptr) {}
         explicit task(handle_type h) : handle(h) {}
         task(task && other) noexcept : handle(other.handle) {
             other.handle = nullptr;
@@ -267,8 +333,18 @@ namespace covent {
         ~task() {
             if (handle) handle.destroy();
         }
+        task & operator = (task && other) noexcept {
+            if(handle) handle.destroy();
+            handle = other.handle;
+            other.handle = nullptr;
+            return *this;
+        }
         auto operator co_await() const {
             return detail::task_awaiter(*this);
+        }
+        template<typename... Args>
+        auto on_completed(Args... a) {
+           return this->handle.promise().completed.connect(a...);
         }
     };
 }

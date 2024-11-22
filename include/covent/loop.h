@@ -32,13 +32,13 @@ namespace covent {
     template<typename Id>
     struct Compare {
         using is_transparent = void;
-        bool operator()(Id::id_type id, std::unique_ptr<Id> const & o2) const {
+        bool operator()(Id::id_type id, std::shared_ptr<Id> const & o2) const {
             return id < o2->id();
         }
-        bool operator()(std::unique_ptr<Id> const & o1, Id::id_type id) const {
+        bool operator()(std::shared_ptr<Id> const & o1, Id::id_type id) const {
             return o1->id() < id;
         }
-        bool operator()(std::unique_ptr<Id> const & o1, std::unique_ptr<Id> const & o2) const {
+        bool operator()(std::shared_ptr<Id> const & o1, std::shared_ptr<Id> const & o2) const {
             return o1->id() < o2->id();
         }
         bool operator()(Id::id_type i1, Id::id_type i2) const {
@@ -63,7 +63,8 @@ namespace covent {
 
         void shutdown();
 
-        Session & add(std::unique_ptr<Session> &&);
+        std::shared_ptr<Session> add(std::shared_ptr<Session> const &);
+        std::shared_ptr<Session> session(Session::id_type id) const;
 
         void listen(ListenerBase &);
 
@@ -80,7 +81,7 @@ namespace covent {
         bool set_next_break();
 
         std::unique_ptr<struct event_base, std::function<void(struct event_base *)>> m_event_base;
-        std::set<std::unique_ptr<Session>, Compare<Session>> m_sessions;
+        std::set<std::shared_ptr<Session>, Compare<Session>> m_sessions;
         std::recursive_mutex m_scheduler_mutex;
         std::multimap<struct timeval, std::function<void()>> m_pending_actions;
         bool m_shutdown = false;

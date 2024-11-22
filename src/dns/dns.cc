@@ -264,7 +264,7 @@ namespace {
     }
 }
 
-covent::instant_task<answers::Address> covent::dns::Resolver::address_v4(std::string const &ihostname) {
+covent::task<answers::Address> covent::dns::Resolver::address_v4(std::string const &ihostname) {
     std::string hostname = toASCII(ihostname);
     covent::future<ub_result *> fut;
     auto query = resolve_async(hostname, 1, &fut);
@@ -281,7 +281,7 @@ covent::instant_task<answers::Address> covent::dns::Resolver::address_v4(std::st
     co_return address;
 }
 
-covent::instant_task<answers::Address> covent::dns::Resolver::address_v6(std::string const &ihostname) {
+covent::task<answers::Address> covent::dns::Resolver::address_v6(std::string const &ihostname) {
     std::string hostname = toASCII(ihostname);
     covent::future<ub_result *> fut;
     auto query = resolve_async(hostname, 28, &fut);
@@ -298,7 +298,7 @@ covent::instant_task<answers::Address> covent::dns::Resolver::address_v6(std::st
     co_return address;
 }
 
-covent::instant_task<answers::SRV> covent::dns::Resolver::srv(std::string const & service, std::string const &base_domain) {
+covent::task<answers::SRV> covent::dns::Resolver::srv(std::string const & service, std::string const &base_domain) {
     std::string domain = toASCII("_" + service + "._tcp." + base_domain + ".");
     covent::future<ub_result *> fut;
     auto query = resolve_async(domain, 33, &fut);
@@ -312,7 +312,7 @@ covent::instant_task<answers::SRV> covent::dns::Resolver::srv(std::string const 
     co_return srv;
 }
 
-covent::instant_task<answers::SVCB> Resolver::svcb(std::string const & service, std::string const &base_domain) {
+covent::task<answers::SVCB> Resolver::svcb(std::string const & service, std::string const &base_domain) {
     std::string domain = toASCII("_" + service + "." + base_domain + ".");
     covent::future<ub_result *> fut;
     auto query = resolve_async(domain, 65, &fut);
@@ -326,7 +326,7 @@ covent::instant_task<answers::SVCB> Resolver::svcb(std::string const & service, 
     co_return svcb;
 }
 
-covent::instant_task<answers::TLSA> covent::dns::Resolver::tlsa(unsigned short port, std::string const &base_domain) {
+covent::task<answers::TLSA> covent::dns::Resolver::tlsa(unsigned short port, std::string const &base_domain) {
     std::ostringstream out;
     out << "_" << port << "._tcp." << base_domain;
     std::string domain = toASCII(out.str());

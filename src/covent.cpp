@@ -171,7 +171,15 @@ void covent::Loop::listen(ListenerBase & listener) {
     evconnlistener_new_bind(m_event_base.get(), listener_connect_cb, &listener, LEV_OPT_CLOSE_ON_FREE | LEV_OPT_REUSEABLE, -1, listener.sockaddr(), sizeof(struct sockaddr_storage));
 }
 
-covent::Session & covent::Loop::add(std::unique_ptr<Session> && optr) {
-    auto const & [it, foo] = m_sessions.emplace(std::move(optr));
-    return *(*it);
+std::shared_ptr<covent::Session> covent::Loop::add(std::shared_ptr<Session> const & optr) {
+    m_sessions.emplace(optr);
+    return optr;
+}
+
+std::shared_ptr<covent::Session> covent::Loop::session(Session::id_type id) const {
+    auto result = m_sessions.find(id);
+    if (result == m_sessions.end()) {
+        throw std::runtime_error("Session not found");
+    }
+    return *result;
 }

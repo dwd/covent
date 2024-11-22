@@ -185,12 +185,12 @@ namespace covent::dns {
 
         ~Resolver();
 
-        covent::instant_task<answers::SRV> srv(std::string const & service, std::string const &domain);
-        covent::instant_task<answers::SVCB> svcb(std::string const & service, std::string const &domain);
-        covent::instant_task<answers::Address> address_v4(std::string const &hostname);
-        covent::instant_task<answers::Address> address_v6(std::string const &hostname);
+        covent::task<answers::SRV> srv(std::string const & service, std::string const &domain);
+        covent::task<answers::SVCB> svcb(std::string const & service, std::string const &domain);
+        covent::task<answers::Address> address_v4(std::string const &hostname);
+        covent::task<answers::Address> address_v6(std::string const &hostname);
 
-        covent::instant_task<answers::TLSA> tlsa(short unsigned int port, std::string const &hostname);
+        covent::task<answers::TLSA> tlsa(short unsigned int port, std::string const &hostname);
     private:
         bool m_dnssec_required;
         event * m_ub_event = nullptr;

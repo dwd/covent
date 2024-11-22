@@ -8,6 +8,7 @@
 #include <event2/event.h>
 #include <event2/buffer.h>
 #include <iostream>
+#include <event2/bufferevent_ssl.h>
 
 namespace{
     covent::Session::id_type next_id = 0;
@@ -116,4 +117,12 @@ void covent::Session::event_cb(struct bufferevent *, short flags) {
         this->connected.resolve();
     }
     // Process flags (close, etc).
+}
+
+SSL * covent::Session::ssl() const {
+    return bufferevent_openssl_get_ssl(m_top);
+}
+
+void covent::Session::ssl(SSL *s, bool connecting) {
+    m_top = bufferevent_openssl_filter_new(bufferevent_get_base(m_top), m_top, s, connecting ? BUFFEREVENT_SSL_CONNECTING : BUFFEREVENT_SSL_ACCEPTING, BEV_OPT_CLOSE_ON_FREE);
 }
