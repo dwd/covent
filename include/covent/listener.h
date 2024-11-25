@@ -13,9 +13,9 @@ namespace covent {
     template<typename T>
     class Listener : public covent::ListenerBase {
     public:
-        Listener(covent::Loop & l, unsigned short p) : covent::ListenerBase(l, p) {}
+        Listener(covent::Loop & l, std::string const & address, unsigned short p) : covent::ListenerBase(l, address, p) {}
         void create_session(evutil_socket_t sock) override {
-            loop().add(std::make_unique<T>(loop(), sock));
+            loop().add(std::make_shared<T>(loop(), sock, *this));
         }
     };
 }

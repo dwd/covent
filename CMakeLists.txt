@@ -40,7 +40,8 @@ set(COVENT_SOURCES
         src/dns/dns.cc
         src/dns/discovery.cpp
         src/tls/pkix.cc
-        src/tls/crl-cache.cc)
+        src/tls/crl-cache.cc
+        include/covent/sleep.h)
 
 add_library(covent SHARED ${COVENT_SOURCES})
 add_library(covent_static STATIC ${COVENT_SOURCES})

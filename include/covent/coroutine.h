@@ -18,11 +18,10 @@
 // #include <sentry.h>
 
 namespace covent {
-
     // Usage: auto & my_promise = co_await own_promise<covent::task<bool>::promise_type>();
     template<typename P>
-    struct own_promise
-    {
+    struct own_promise {
+        static constexpr bool no_loop_resume = true;
         mutable P * promise;
         bool await_ready() const noexcept {
             return false; // Say we'll suspend to get await_suspend called.
@@ -74,6 +73,7 @@ namespace covent {
                 template<typename P>
                 std::coroutine_handle<> await_suspend(std::coroutine_handle<P> h) const noexcept
                 {
+                    h.promise().completed.emit();
                     if (auto parent = h.promise().parent; parent)
                         return parent;
                     else
@@ -81,7 +81,6 @@ namespace covent {
                 }
             };
             final_awaiter final_suspend() noexcept {
-                completed.emit();
                 return {};
             }
 
@@ -171,7 +170,9 @@ namespace covent {
             return handle.done();
         }
         value_type get() const {
-            if (!done()) throw covent_logic_error("coroutine not done yet");
+            if (!done()) {
+                throw covent_logic_error("coroutine not done yet");
+            }
             return handle.promise().get();
         }
         template<typename... Args>
@@ -281,6 +282,12 @@ namespace covent {
             }
 
             template<typename A>
+            requires A::no_loop_resume
+            auto const & await_transform(const A & a) {
+                return a;
+            }
+
+            template<typename A>
             auto await_transform(A & a) {
                 covent::temp<A &> aa;
                 aa.assign(a);
@@ -291,10 +298,6 @@ namespace covent {
                 covent::temp<const A &> aa;
                 aa.assign(a);
                 return await_transformer<const A, wrapped_promise<R>>{std::move(aa)};
-            }
-
-            auto const & await_transform(const own_promise<wrapped_promise> & a) {
-                return a;
             }
         };
     }
@@ -321,7 +324,9 @@ namespace covent {
             return handle.done();
         }
         value_type get() const {
-            if (!done()) throw covent_logic_error("coroutine not done yet");
+            if (!done()) {
+                throw covent_logic_error("coroutine not done yet");
+            }
             return handle.promise().get();
         }
 

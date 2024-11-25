@@ -33,12 +33,12 @@ namespace covent {
             return m_value.has_value() || m_except;
         }
 
-        std::coroutine_handle<> await_suspend(std::coroutine_handle<> awaiting_coroutine) const {
+        bool await_suspend(std::coroutine_handle<> awaiting_coroutine) const {
             if (await_ready()) {
-                return awaiting_coroutine;
+                return false;
             }
             m_coro = awaiting_coroutine;
-            return std::noop_coroutine();
+            return true;
         }
 
         V await_resume() const {
@@ -46,6 +46,14 @@ namespace covent {
                 std::rethrow_exception(m_except);
             }
             return std::move(*m_value);
+        }
+
+        void reset() {
+            if (await_ready()) {
+                m_value.reset();
+                m_except = nullptr;
+                m_coro = nullptr;
+            }
         }
     private:
         void gogogo() {

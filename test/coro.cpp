@@ -192,3 +192,8 @@ TEST(CoroThrow, nested) {
     EXPECT_TRUE(task.done());
     EXPECT_ANY_THROW(task.get());
 }
+
+TEST(CoroThrow, nested_run_task) {
+    covent::Loop loop;
+    EXPECT_ANY_THROW(loop.run_task(outer()));
+}

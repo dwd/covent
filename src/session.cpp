@@ -29,7 +29,7 @@ namespace{
 covent::Session::Session(Loop & loop): m_id(next_id++), m_loop(loop) {
 }
 
-covent::Session::Session(covent::Loop &loop, int sock): m_id(next_id++), m_loop(loop) {
+covent::Session::Session(covent::Loop &loop, int sock, ListenerBase &): m_id(next_id++), m_loop(loop) {
     m_base_buf = bufferevent_socket_new(m_loop.event_base(), sock, BEV_OPT_CLOSE_ON_FREE);
     m_top = m_base_buf;
     bufferevent_setcb(m_top, bev_read_cb, bev_write_cb, bev_event_cb, this);
@@ -76,33 +76,56 @@ void covent::Session::used(size_t len) {
     evbuffer_drain(bufferevent_get_input(m_top), len);
 }
 
+void covent::Session::processing_complete() {
+    try {
+        m_processor->get();
+        m_processor.reset();
+    } catch(...) {
+        // Unhandled exception.
+        close();
+    }
+}
+
 void covent::Session::read_cb(struct bufferevent *) {
     if (m_processor.has_value()) {
         // Wait until it's done.
-        if (m_processor->done()) {
-            m_processor.reset();
-        } else {
-            return;
-        }
+        return;
     }
     // Create and start the process task.
     // We'll try first using whatever contiguous data we have to hand:
     size_t len;
     struct evbuffer *buf = bufferevent_get_input(m_top);
     while ((len = evbuffer_get_contiguous_space(buf)) > 0) {
-        m_processor.emplace(process({reinterpret_cast<char *>(evbuffer_pullup(buf, static_cast<ssize_t>(len))), len}));
-        if (!m_processor->start()) return;
-        auto used_any = m_processor->get();
-        m_processor.reset();
-        if (!used_any) break;
+        try {
+            m_processor.emplace(process({reinterpret_cast<char *>(evbuffer_pullup(buf, static_cast<ssize_t>(len))), len}));
+            if (!m_processor->start()) {
+                m_processor->on_completed(this, &Session::processing_complete);
+                return;
+            }
+            auto used_octets = m_processor->get();
+            m_processor.reset();
+            if (!used_octets) break;
+            used(used_octets);
+        } catch (...) {
+            close();
+            return;
+        }
         // TODO : Check closed
     }
     while ((len = evbuffer_get_length(buf)) > 0) {
-        m_processor.emplace(process({reinterpret_cast<char *>(evbuffer_pullup(buf, -1)), len}));
-        if (!m_processor->start()) return;
-        auto used_any = m_processor->get();
-        m_processor.reset();
-        if (!used_any) break;
+        try {
+            m_processor.emplace(process({reinterpret_cast<char *>(evbuffer_pullup(buf, -1)), len}));
+            if (!m_processor->start()) {
+                m_processor->on_completed(this, &Session::processing_complete);
+                return;
+            }
+            auto used_octets = m_processor->get();
+            m_processor.reset();
+            if (!used_octets) break;
+        } catch(...) {
+            close();
+            return;
+        }
         // TODO : Check closed
     }
 }
@@ -116,6 +139,12 @@ void covent::Session::event_cb(struct bufferevent *, short flags) {
     if (flags & BEV_EVENT_CONNECTED) {
         this->connected.resolve();
     }
+    if (flags & BEV_EVENT_EOF) {
+        this->closed();
+    }
+    if (flags & BEV_EVENT_ERROR) {
+        this->closed();
+    }
     // Process flags (close, etc).
 }
 
@@ -125,4 +154,16 @@ SSL * covent::Session::ssl() const {
 
 void covent::Session::ssl(SSL *s, bool connecting) {
     m_top = bufferevent_openssl_filter_new(bufferevent_get_base(m_top), m_top, s, connecting ? BUFFEREVENT_SSL_CONNECTING : BUFFEREVENT_SSL_ACCEPTING, BEV_OPT_CLOSE_ON_FREE);
+}
+
+void covent::Session::close() {
+    if (m_top) {
+        bufferevent_flush(m_top, EV_WRITE, BEV_FINISHED);
+        m_top = nullptr;
+    }
+    if (m_base_buf) {
+        bufferevent_free(m_base_buf);
+        m_base_buf = nullptr;
+    }
+    m_loop.remove(*this);
 }

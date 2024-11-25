@@ -60,11 +60,24 @@ namespace covent {
         void run_until(std::function<bool()> const&);
         void run_until_complete(); // Run single cycles until no sessions or deferred calls exist. A listening session will never end!
         void run_until_complete(Session const &); // Run single cycles until this session is closed.
+        template<typename V>
+        V run_task(task<V> && task) {
+            task.start();
+            this->run_until([&task]() { return task.done(); });
+            if (task.done()) {
+                return task.get();
+            } else {
+                // Loop has been killed via shutdown before the task could complete.
+                throw covent::covent_runtime_error("Loop shutdown before task completed");
+            }
+        }
 
         void shutdown();
 
         std::shared_ptr<Session> add(std::shared_ptr<Session> const &);
         std::shared_ptr<Session> session(Session::id_type id) const;
+        void remove(Session & session);
+        void remove(std::shared_ptr<Session> const & session);
 
         void listen(ListenerBase &);
 

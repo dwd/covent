@@ -183,3 +183,12 @@ std::shared_ptr<covent::Session> covent::Loop::session(Session::id_type id) cons
     }
     return *result;
 }
+
+void covent::Loop::remove(covent::Session &sess) {
+    auto ptr = session(sess.id());
+    remove(ptr);
+}
+
+void covent::Loop::remove(std::shared_ptr<Session> const & sess) {
+    m_sessions.erase(sess);
+}
