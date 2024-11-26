@@ -60,7 +60,10 @@ namespace covent {
         // Anything you do consume, return the number of octets you used (this will destroy buffers).
         virtual task<std::size_t> process(std::string_view data) = 0;
 
-        virtual void closed() {}
+        // Default behaviour when the other end is closed is to simply close the session.
+        virtual void closed() {
+            this->close();
+        }
 
         void write(std::string_view data); // Fire and forget writing.
         [[nodiscard]] task<void> flush(std::string_view data = {}); // Awaitable writing.
@@ -91,9 +94,8 @@ namespace covent {
     private:
         id_type m_id;
         Loop & m_loop;
-        // this will always be a socket bufferevent.
-        struct bufferevent * m_base_buf = nullptr;
-        // This might be the same as above, but more likely a TLS (or other filter).
+        bool m_closing = false;
+        // Only need to track the top one.
         struct bufferevent * m_top = nullptr;
         std::optional<task<std::size_t>> m_processor;
         future<void> connected;
