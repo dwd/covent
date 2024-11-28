@@ -23,6 +23,7 @@
 #include "future.h"
 
 struct bufferevent;
+struct evconnlistener;
 
 namespace covent {
     class ListenerBase {
@@ -31,17 +32,19 @@ namespace covent {
 
         const struct sockaddr * sockaddr() const;
         void session_connected(evutil_socket_t sock, const struct sockaddr * addr, int len);
+        void listen(Loop &);
 
         virtual void create_session(evutil_socket_t) = 0;
         Loop & loop() {
             return m_loop;
         }
-        virtual ~ListenerBase() = default;
+        virtual ~ListenerBase();
 
     private:
         Loop & m_loop;
         unsigned short m_port;
         struct sockaddr_storage m_sockaddr;
+        struct evconnlistener * m_listener = nullptr;
     };
 
     class Session : public sigslot::has_slots {
@@ -98,8 +101,8 @@ namespace covent {
         // Only need to track the top one.
         struct bufferevent * m_top = nullptr;
         std::optional<task<std::size_t>> m_processor;
-        future<void> connected;
-        future<void> written;
+        sigslot::signal<> connected;
+        sigslot::signal<> written;
     };
 }
 

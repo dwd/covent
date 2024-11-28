@@ -73,11 +73,17 @@ void covent::Session::used(size_t len) {
 }
 
 void covent::Session::processing_complete() {
+    auto self = loop().session(id());
     try {
-        m_processor->get();
-        m_processor.reset();
-    } catch(...) {
+        auto used_octets = m_processor->get();
+        if (used_octets) used(used_octets);
+        if (m_closing) {
+            std::cout << "Retry close" << std::endl;
+            close();
+        }
+    } catch(std::exception & e) {
         // Unhandled exception.
+        std::cout << "Deferred exception caught: " << e.what() << std::endl;
         close();
     }
 }
@@ -86,7 +92,11 @@ void covent::Session::read_cb(struct bufferevent *) {
     auto self = loop().session(id());
     if (m_processor.has_value()) {
         // Wait until it's done.
-        return;
+        if (m_processor->done()) {
+            m_processor.reset();
+        } else {
+            return;
+        }
     }
     // Create and start the process task.
     // We'll try first using whatever contiguous data we have to hand:
@@ -106,7 +116,9 @@ void covent::Session::read_cb(struct bufferevent *) {
             std::cout << "Immediate " << static_cast<void *>(buf) << " - used " << used_octets << std::endl;
             if (!used_octets) break;
             used(used_octets);
-        } catch (...) {
+        } catch (std::exception & e) {
+            std::cout << "Immediate contiguous exception caught: " << e.what() << std::endl;
+            m_processor.reset();
             close();
             return;
         }
@@ -132,7 +144,10 @@ void covent::Session::read_cb(struct bufferevent *) {
             auto used_octets = m_processor->get();
             m_processor.reset();
             if (!used_octets) break;
-        } catch(...) {
+            used(used_octets);
+        } catch(std::exception& e) {
+            std::cout << "Immediate pull-up exception caught: " << e.what() << std::endl;
+            m_processor.reset();
             close();
             return;
         }
@@ -143,29 +158,34 @@ void covent::Session::read_cb(struct bufferevent *) {
 }
 
 void covent::Session::write_cb(struct bufferevent *) {
-    this->written.resolve();
+    this->written.emit();
     if (m_closing) {
+        std::cout << "Write retry close" << std::endl;
         close();
     }
     // Not actually sure!
 }
 
-void covent::Session::event_cb(struct bufferevent *, short flags) {
-    std::cout << "Flags: " << flags << std::endl;
+void covent::Session::event_cb(struct bufferevent * buf, short flags) {
+    if (buf != m_top) {
+        std::cout << "Not mine" << std::endl;
+        return;
+    }
+    std::cout << "Flags: " << flags << " Serial:" << id() << std::endl;
     if (flags & BEV_EVENT_CONNECTED) {
-        std::cout << "Flags: Connected" << flags << std::endl;
-        this->connected.resolve();
+        std::cout << "Flags: Connected " << flags << std::endl;
+        this->connected.emit();
     }
     if (flags & BEV_EVENT_EOF) {
-        std::cout << "Flags: Closed" << flags << std::endl;
+        std::cout << "Flags: Closed " << flags << std::endl;
         this->closed();
     }
     if (flags & BEV_EVENT_ERROR) {
-        std::cout << "Flags: Error" << flags << std::endl;
+        std::cout << "Flags: Error " << flags << std::endl;
         this->closed();
     }
     if (flags & BEV_EVENT_TIMEOUT) {
-        std::cout << "Flags: Timeout" << flags << std::endl;
+        std::cout << "Flags: Timeout " << flags << std::endl;
         this->closed();
     }
     // Process flags (close, etc).
@@ -184,11 +204,16 @@ void covent::Session::ssl(SSL *s, bool connecting) {
 
 void covent::Session::close() {
     m_closing = true;
+    if (m_processor.has_value() && !m_processor->done()) {
+        std::cout << "Deferring close due to processor" << std::endl;
+        return;
+    }
     if (m_top) {
         std::cout << "Close flush" << std::endl;
         bufferevent_flush(m_top, EV_WRITE, BEV_FINISHED);
         auto * buf = bufferevent_get_output(m_top);
         if (evbuffer_get_length(buf) > 0) {
+            std::cout << "Deferring close due to pending write" << std::endl;
             return;
         }
         std::cout << "Kill m_top"  << std::endl;

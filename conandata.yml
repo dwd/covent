@@ -2,6 +2,8 @@
 # To keep your changes, remove these comment lines, but the plugin won't be able to modify your requirements
 
 requirements:
+  - "icu/76.1"
   - "libevent/2.1.12"
   - "sigslot/1.0.1@dwd/metre"
   - "unbound/1.22.0@dwd/metre"
+  - "openssl/[>=3.3.0 <4]"

@@ -14,7 +14,7 @@
 using namespace covent::pkix;
 
 namespace {
-    CrlCache * s_crl_cache = 0;
+    CrlCache * s_crl_cache = nullptr;
 }
 
 CrlCache & CrlCache::crl_cache() {

@@ -4,7 +4,7 @@ from conan.tools.build import check_min_cppstd
 
 class ConanApplication(ConanFile):
     name = "covent"
-    version = "0.1.2"
+    version = "0.1.3"
     email = "Dave Cridland <dave@cridland.net>"
     package_type = "library"
     settings = "os", "compiler", "build_type", "arch"
@@ -17,7 +17,7 @@ class ConanApplication(ConanFile):
     default_options = {
         "tests": True,
         "sentry": True,
-        "shared": True,
+        "shared": False,
     }
 
     exports_sources = "src/*", "CMakeLists.txt", "include/*", "test/*"
@@ -60,4 +60,4 @@ class ConanApplication(ConanFile):
         tc.install()
 
     def package_info(self):
-        self.cpp_info.libs = ["covent"]
+        self.cpp_info.libs = ["covent_static"]

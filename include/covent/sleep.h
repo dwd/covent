@@ -20,11 +20,28 @@ namespace covent {
         void await_resume() const {}
         template<typename A, typename L>
         void await_suspend(std::coroutine_handle<detail::wrapped_promise<A,L>> p) const {
-            p.promise().loop->defer([p]() { p.resume(); }, m_time);
+            std::weak_ptr<bool> liveness = p.promise().liveness;
+            p.promise().loop->defer([p, liveness]() {
+                auto alive = liveness.lock();
+                if (alive) {
+                    p.resume();
+                }
+            }, m_time);
         }
-        void await_suspend(std::coroutine_handle<> p) const {
-            covent::Loop::thread_loop().defer([p]() { p.resume(); }, m_time);
+        template<typename A>
+        void await_suspend(std::coroutine_handle<detail::promise<A>> p) const {
+            std::weak_ptr<bool> liveness = p.promise().liveness;
+            p.promise().loop->defer([p, liveness]() {
+                auto alive = liveness.lock();
+                if (alive) {
+                    p.resume();
+                }
+            }, m_time);
         }
+//        void await_suspend(std::coroutine_handle<> p) const {
+//            // Also here?
+//            covent::Loop::thread_loop().defer([p]() { p.resume(); }, m_time);
+//        }
         auto & operator co_await () const {
             return *this;
         }

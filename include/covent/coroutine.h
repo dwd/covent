@@ -52,6 +52,12 @@ namespace covent {
             std::coroutine_handle<> parent;
             std::shared_ptr<Stack> stack;
             sigslot::signal<> completed;
+            /**
+             * Double duty - a boolean that indicates if the coroutine has been started, and
+             * also a shared_ptr to check (via weak_ptr) if the coroutine remains alive.
+             * Only keep a weak_ptr ref to this!
+             */
+            std::shared_ptr<bool> liveness = std::make_shared<bool>(false);
 
             std::suspend_always initial_suspend() {
                 this->stack = thread_stack.lock();
@@ -149,6 +155,11 @@ namespace covent {
                 if (task.handle.done()) {
                     return coro;
                 }
+                if (*task.handle.promise().liveness) {
+                    // Already started, but presumably suspended, so do nothing.
+                    return std::noop_coroutine();
+                }
+                *task.handle.promise().liveness = true;
                 return task.handle;
             }
         };
@@ -163,6 +174,7 @@ namespace covent {
         handle_type handle = nullptr;
 
         bool start() const {
+            *handle.promise().liveness = true;
             handle.resume();
             return handle.done();
         }
@@ -209,12 +221,21 @@ namespace covent {
 
             explicit await_transformer_base(covent::temp<A&> && a) : real(std::move(a)) {}
 
-            void resume(std::coroutine_handle<P> coro) {
+            void resume(std::coroutine_handle<P> coro, covent::instant_task<void>::promise_type & p) {
                 // TODO: Shuffle virtual callstack, schedule call.
+                if (coro.promise().same_loop()) {
+                    p.parent = coro;
+                    return;
+                }
                 auto * l = coro.promise().loop;
-                l->defer([coro](){
-                    coro.promise().restack();
-                    coro.resume();
+                std::weak_ptr<bool> liveness = coro.promise().liveness;
+
+                l->defer([coro, liveness](){
+                    auto alive = liveness.lock();
+                    if (alive) {
+                        coro.promise().restack();
+                        coro.resume();
+                    }
                 });
             }
 
@@ -240,7 +261,7 @@ namespace covent {
                 } catch (...) {
                     p.unhandled_exception();
                 }
-                this->resume(coro);
+                this->resume(coro, p);
             }
             auto await_suspend(std::coroutine_handle<P> coro) {
                 this->runner = wrapper(coro);
@@ -260,7 +281,7 @@ namespace covent {
                 } catch (...) {
                     p.unhandled_exception();
                 }
-                this->resume(coro);
+                this->resume(coro, p);
             }
             auto await_suspend(std::coroutine_handle<P> coro) {
                 this->runner = wrapper(coro);
@@ -275,6 +296,10 @@ namespace covent {
 
             wrapped_promise() : loop(&L::thread_loop()) {}
             explicit wrapped_promise(L & l) : loop(&l) {}
+
+            bool same_loop() {
+                return loop == &L::thread_loop();
+            }
 
             using handle_type = std::__n4861::coroutine_handle<wrapped_promise<R>>;
             R get_return_object() {
@@ -311,11 +336,20 @@ namespace covent {
         handle_type handle;
         bool start() const {
             if (!handle) throw std::logic_error("No such coroutine");
-            if (handle.promise().loop == &L::thread_loop()) {
+            if (handle.promise().same_loop()) {
+                *handle.promise().liveness = true;
                 handle.resume();
             } else {
                 auto * l = handle.promise().loop;
-                l->defer([this](){ handle.resume(); });
+                std::weak_ptr<bool> alive = handle.promise().liveness;
+
+                l->defer([handle= this->handle, alive](){
+                    auto liveness = alive.lock();
+                    if (liveness) {
+                        *handle.promise().liveness = true;
+                        handle.resume();
+                    }
+                });
             }
             return handle.done();
         }

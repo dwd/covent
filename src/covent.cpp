@@ -160,15 +160,8 @@ void covent::Loop::defer(std::function<void()> &&fn) {
     this->defer(std::move(fn), {0, 0});
 }
 
-namespace {
-    void listener_connect_cb(struct evconnlistener *, evutil_socket_t sock, struct sockaddr * addr, int len, void * arg) {
-        auto listener = static_cast<covent::ListenerBase *>(arg);
-        listener->session_connected(sock, addr, len);
-    }
-}
-
 void covent::Loop::listen(ListenerBase & listener) {
-    evconnlistener_new_bind(m_event_base.get(), listener_connect_cb, &listener, LEV_OPT_CLOSE_ON_FREE | LEV_OPT_REUSEABLE, -1, listener.sockaddr(), sizeof(struct sockaddr_storage));
+    listener.listen(*this);
 }
 
 std::shared_ptr<covent::Session> covent::Loop::add(std::shared_ptr<Session> const & optr) {

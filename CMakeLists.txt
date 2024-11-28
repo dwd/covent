@@ -13,6 +13,8 @@ endif()
 find_package(Libevent)
 find_package(SigSlot)
 find_package(unbound)
+find_package(ICU)
+find_package(OpenSSL)
 
 set(COVENT_HEADERS
         include/covent/covent.h
@@ -43,24 +45,24 @@ set(COVENT_SOURCES
         src/tls/crl-cache.cc
         include/covent/sleep.h)
 
-add_library(covent SHARED ${COVENT_SOURCES})
+#add_library(covent SHARED ${COVENT_SOURCES})
 add_library(covent_static STATIC ${COVENT_SOURCES})
-add_library(covent::covent ALIAS covent)
+#add_library(covent::covent ALIAS covent)
 add_library(covent::covent_static ALIAS covent_static)
-target_include_directories(covent PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:include>  # <prefix>/ include/ mylib
-)
+#target_include_directories(covent PUBLIC
+#        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+#        $<INSTALL_INTERFACE:include>  # <prefix>/ include/ mylib
+#)
 target_include_directories(covent_static PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>  # <prefix>/ include/ mylib
 )
-target_link_libraries(covent PUBLIC libevent::libevent sigslot::sigslot unbound::unbound)
-target_link_libraries(covent_static PUBLIC libevent::libevent sigslot::sigslot unbound::unbound)
-set_target_properties(covent PROPERTIES EXPORT_NAME covent)
+#target_link_libraries(covent PUBLIC libevent::libevent sigslot::sigslot unbound::unbound ICU::uc ICU::i18n OpenSSL::SSL OpenSSL::Crypto)
+target_link_libraries(covent_static PUBLIC libevent::libevent sigslot::sigslot unbound::unbound ICU::uc ICU::i18n OpenSSL::SSL OpenSSL::Crypto)
+#set_target_properties(covent PROPERTIES EXPORT_NAME covent)
 
 install(DIRECTORY include/covent TYPE INCLUDE)
-install(TARGETS covent EXPORT coventTargets LIBRARY DESTINATION lib ARCHIVE DESTINATION lib)
+#install(TARGETS covent EXPORT coventTargets LIBRARY DESTINATION lib ARCHIVE DESTINATION lib)
 install(TARGETS covent_static EXPORT coventTargets LIBRARY DESTINATION lib ARCHIVE DESTINATION lib)
 install(EXPORT coventTargets FILE covent.cmake NAMESPACE covent:: DESTINATION lib/cmake/covent)
 export(EXPORT coventTargets NAMESPACE covent:: FILE "${CMAKE_CURRENT_BINARY_DIR}/covent.cmake")
@@ -85,6 +87,7 @@ if(COVENT_BUILD_TESTS)
             test/http.cpp
             test/dns-utils.cc
             test/resolver.cc
+            test/crls.cpp
     )
     target_include_directories(covent-test SYSTEM PUBLIC include)
     target_link_libraries(covent-test PUBLIC covent_static GTest::gtest)

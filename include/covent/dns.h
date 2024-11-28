@@ -191,10 +191,19 @@ namespace covent::dns {
         covent::task<answers::Address> address_v6(std::string const &hostname);
 
         covent::task<answers::TLSA> tlsa(short unsigned int port, std::string const &hostname);
+
+        void event_callback();
     private:
         bool m_dnssec_required;
         event * m_ub_event = nullptr;
-        ub_ctx * m_ub_ctx = nullptr;
+        struct ctx_holder {
+            ub_ctx * ctx;
+            ub_ctx * get() {
+                return ctx;
+            }
+            ~ctx_holder();
+        };
+        std::shared_ptr<ctx_holder> m_ub_ctx; // Need to keep this around after destruction.
         std::unordered_set<int> m_queries;
         struct query {
             Resolver & resolver;

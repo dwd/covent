@@ -34,12 +34,6 @@ TEST(HTTP, RequestHeaderSet) {
 TEST(HTTP, RequestSimple) {
     covent::Loop loop;
     covent::http::Request req(covent::http::Request::Method::GET, "https://www.google.com");
-    auto task = req();
-    task.start();
-    loop.run_until([&task]() {
-        return task.done();
-    });
-    EXPECT_TRUE(task.done());
-    auto resp = task.get();
+    auto resp = loop.run_task(req());
     EXPECT_EQ(resp.status(), 200);
 }

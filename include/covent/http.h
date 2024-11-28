@@ -48,16 +48,21 @@ namespace covent {
         class Request;
         class Response {
         public:
-            Response(evhttp_request *);
+            explicit Response(evhttp_request *);
+            ~Response();
 
             [[nodiscard]] int status() const;
 
             FieldRef operator [] (std::string const &);
             ConstFieldRef operator [] (std::string const &) const;
-            [[nodiscard]] std::string_view body() const;
-
+            auto const & body() const {
+                return m_body;
+            }
         private:
+            [[nodiscard]] std::string_view body_low() const;
+
             evhttp_request * m_request;
+            std::string m_body;
         };
         class Request {
         public:
@@ -65,9 +70,10 @@ namespace covent {
                 GET, POST, PUT, DELETE
             };
             Request(Method, std::string uri);
+            ~Request();
             FieldRef operator [] (std::string const &);
             ConstFieldRef operator [] (std::string const &) const;
-            covent::task<Response> operator () () const;
+            covent::task<Response> operator () ();
 
             void complete();
 

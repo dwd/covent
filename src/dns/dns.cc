@@ -183,36 +183,49 @@ namespace {
 
         ~UBResult() { ub_resolve_free(result); }
     };
+
+    std::set<Resolver *> & resolvers() {
+        static std::set<Resolver *> res;
+        return res;
+    }
+
+
+    void event_callback_anon(evutil_socket_t, short, void *arg) {
+        Resolver * self = static_cast<Resolver *>(arg);
+        if (resolvers().contains(self)) {
+            self->event_callback();
+        }
+    }
 }
 
-namespace {
-    void event_callback(evutil_socket_t, short, void *arg) {
-        while (ub_poll(static_cast<struct ub_ctx *>(arg))) {
-            ub_process(static_cast<struct ub_ctx *>(arg));
-        }
+void Resolver::event_callback() {
+    auto hold = m_ub_ctx;
+    while (ub_poll(hold->get())) {
+        ub_process(hold->get());
     }
 }
 
 Resolver::Resolver(bool dnssec_required, bool tls, std::optional<std::string> ta_file) : m_dnssec_required(dnssec_required) {
-    m_ub_ctx = ub_ctx_create();
-    ub_ctx_set_tls(m_ub_ctx, tls ? 1 : 0);
-    // TODO : ub_ctx_set_fwd(m_ub_ctx, "");
-    if (int retval = ub_ctx_async(m_ub_ctx, 1); retval != 0) {
+    m_ub_ctx = std::make_shared<ctx_holder>(ub_ctx_create());
+    ub_ctx_set_tls(m_ub_ctx->get(), tls ? 1 : 0);
+    // TODO : ub_ctx_set_fwd(m_ub_ctx->get(), "");
+    if (int retval = ub_ctx_async(m_ub_ctx->get(), 1); retval != 0) {
         throw std::runtime_error(ub_strerror(retval));
     }
-    if (int retval = ub_ctx_resolvconf(m_ub_ctx, nullptr); retval != 0) {
+    if (int retval = ub_ctx_resolvconf(m_ub_ctx->get(), nullptr); retval != 0) {
         throw std::runtime_error(ub_strerror(retval));
     }
-    if (int retval = ub_ctx_hosts(m_ub_ctx, nullptr); retval != 0) {
+    if (int retval = ub_ctx_hosts(m_ub_ctx->get(), nullptr); retval != 0) {
         throw std::runtime_error(ub_strerror(retval));
     }
     if (ta_file.has_value()) {
-        if (int retval = ub_ctx_add_ta_file(m_ub_ctx, ta_file.value().c_str()); retval != 0) {
+        if (int retval = ub_ctx_add_ta_file(m_ub_ctx->get(), ta_file.value().c_str()); retval != 0) {
             throw std::runtime_error(ub_strerror(retval));
         }
     }
     covent::Loop &loop = covent::Loop::thread_loop();
-    m_ub_event = event_new(loop.event_base(), ub_fd(m_ub_ctx), EV_READ|EV_PERSIST, event_callback, m_ub_ctx);
+    m_ub_event = event_new(loop.event_base(), ub_fd(m_ub_ctx->get()), EV_READ|EV_PERSIST, event_callback_anon, this);
+    resolvers().insert(this);
     event_add(m_ub_event, nullptr);
 }
 
@@ -232,13 +245,13 @@ namespace {
 }
 
 void Resolver::cancel(int async_id) {
-    ub_cancel(m_ub_ctx, async_id);
+    ub_cancel(m_ub_ctx->get(), async_id);
 }
 
 Resolver::query Resolver::resolve_async(std::string const &record, int rrtype, covent::future<ub_result *> * fut) {
     int retval;
     int async_id;
-    if ((retval = ub_resolve_async(m_ub_ctx, const_cast<char *>(record.c_str()), rrtype, 1,
+    if ((retval = ub_resolve_async(m_ub_ctx->get(), const_cast<char *>(record.c_str()), rrtype, 1,
                                    static_cast<void *>(fut), callback, &async_id)) < //NOSONAR(cpp:S3630)
         0) {
         throw std::runtime_error(std::string("While resolving ") + record + ": " + ub_strerror(retval));
@@ -264,7 +277,7 @@ namespace {
     }
 }
 
-covent::task<answers::Address> covent::dns::Resolver::address_v4(std::string const &ihostname) {
+covent::task<answers::Address> Resolver::address_v4(std::string const &ihostname) {
     std::string hostname = toASCII(ihostname);
     covent::future<ub_result *> fut;
     auto query = resolve_async(hostname, 1, &fut);
@@ -281,7 +294,7 @@ covent::task<answers::Address> covent::dns::Resolver::address_v4(std::string con
     co_return address;
 }
 
-covent::task<answers::Address> covent::dns::Resolver::address_v6(std::string const &ihostname) {
+covent::task<answers::Address> Resolver::address_v6(std::string const &ihostname) {
     std::string hostname = toASCII(ihostname);
     covent::future<ub_result *> fut;
     auto query = resolve_async(hostname, 28, &fut);
@@ -298,7 +311,7 @@ covent::task<answers::Address> covent::dns::Resolver::address_v6(std::string con
     co_return address;
 }
 
-covent::task<answers::SRV> covent::dns::Resolver::srv(std::string const & service, std::string const &base_domain) {
+covent::task<answers::SRV> Resolver::srv(std::string const & service, std::string const &base_domain) {
     std::string domain = toASCII("_" + service + "._tcp." + base_domain + ".");
     covent::future<ub_result *> fut;
     auto query = resolve_async(domain, 33, &fut);
@@ -326,7 +339,7 @@ covent::task<answers::SVCB> Resolver::svcb(std::string const & service, std::str
     co_return svcb;
 }
 
-covent::task<answers::TLSA> covent::dns::Resolver::tlsa(unsigned short port, std::string const &base_domain) {
+covent::task<answers::TLSA> Resolver::tlsa(unsigned short port, std::string const &base_domain) {
     std::ostringstream out;
     out << "_" << port << "._tcp." << base_domain;
     std::string domain = toASCII(out.str());
@@ -336,21 +349,25 @@ covent::task<answers::TLSA> covent::dns::Resolver::tlsa(unsigned short port, std
     auto tlsa = init_answer<answers::TLSA>(result.result, m_dnssec_required);
     if (tlsa.error.empty()) {
         for (int i = 0; result->data[i]; ++i) {
-            tlsa.rrs.push_back(rr::TLSA::parse(result->data[i]));
+            tlsa.rrs.push_back(rr::TLSA::parse(std::string(result->data[i], result->len[i])));
         }
     }
     co_return tlsa;
 }
 
-covent::dns::Resolver::~Resolver() {
+Resolver::~Resolver() {
+    resolvers().erase(this);
     if (m_ub_ctx) {
         for (auto async_id: m_queries) {
-            ub_cancel(m_ub_ctx, async_id);
+            ub_cancel(m_ub_ctx->get(), async_id);
         }
         if (m_ub_event) {
             event_del(m_ub_event);
             event_free(m_ub_event);
         }
-        ub_ctx_delete(m_ub_ctx);
     }
+}
+
+Resolver::ctx_holder::~ctx_holder() {
+    ub_ctx_delete(ctx);
 }

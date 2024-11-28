@@ -4,6 +4,7 @@
 
 #include <covent/loop.h>
 #include <covent/gather.h>
+#include <covent/sleep.h>
 #include "gtest/gtest.h"
 
 namespace run_single {
@@ -62,7 +63,7 @@ TEST(Coro, run_suspend) {
     EXPECT_EQ(i, 1);
     EXPECT_FALSE(task.done());
     run_suspend::fut_quick.resolve(10);
-    EXPECT_EQ(i, 11);
+    EXPECT_EQ(i, 12);
     EXPECT_FALSE(task.done());
     loop.run_until_complete();
     EXPECT_EQ(i, 12);
@@ -149,11 +150,18 @@ TEST(CoroSigslot, sigslot_test_str) {
 
 namespace {
     covent::task<int> first() {
+        co_await covent::sleep(0.1);
         co_return 1;
     }
-    covent::task<int> second() {
-        co_return 2;
+    covent::task<long> second() {
+        co_return 1 + co_await first();
     }
+}
+
+TEST(CoroGather, single) {
+    covent::Loop loop;
+    auto result = loop.run_task(second());
+    EXPECT_EQ(result, 2);
 }
 
 TEST(CoroGather, gather) {

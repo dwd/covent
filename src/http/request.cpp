@@ -16,8 +16,14 @@ namespace {
 }
 Request::Request(covent::http::Request::Method m, std::string uri) : method(m), m_uri(std::move(uri)) {
     m_request = evhttp_request_new(request_complete, this);
+    evhttp_request_own(m_request);
     auto parsed = evhttp_uri_parse(m_uri.c_str());
     evhttp_add_header(evhttp_request_get_output_headers(m_request), "Host", evhttp_uri_get_host(parsed));
+    evhttp_uri_free(parsed);
+}
+
+Request::~Request() {
+    if (m_request) evhttp_request_free(m_request);
 }
 
 void Request::complete() {
@@ -34,7 +40,7 @@ ConstFieldRef Request::operator[](const std::string & name) const {
     return ConstFieldRef(header, name);
 }
 
-covent::task<Response> Request::operator()() const {
+covent::task<Response> Request::operator()() {
     auto & loop = Loop::thread_loop();
     auto parsed = evhttp_uri_parse(m_uri.c_str());
     auto port = evhttp_uri_get_port(parsed);
@@ -54,6 +60,9 @@ covent::task<Response> Request::operator()() const {
         path_str = path.c_str();
     }
     evhttp_make_request(conn, m_request, EVHTTP_REQ_GET, path_str);
+    auto temp = m_request;
+    m_request = nullptr;
+    evhttp_uri_free(parsed);
     co_await m_completed;
-    co_return Response(m_request);
+    co_return Response(temp);
 }
