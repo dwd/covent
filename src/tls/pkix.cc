@@ -177,7 +177,7 @@ PKIXIdentity::PKIXIdentity(std::string const & cert_chain, std::string const & p
 PKIXValidator::PKIXValidator(bool crls, bool use_system_trust) : m_crls(crls), m_system_trust(use_system_trust) {
 }
 
-TLSContext::TLSContext(bool enabled, std::string const & domain) : m_enabled(enabled), m_domain(domain) {
+TLSContext::TLSContext(bool enabled, bool validation, std::string const & domain) : m_enabled(enabled), m_validation(validation), m_domain(domain) {
     if (m_enabled) {
         m_dhparam = "auto";
         m_cipherlist = "HIGH:!3DES:!eNULL:!aNULL:@STRENGTH"; // Apparently 3DES qualifies for HIGH, but is 112 bits, which the IM Observatory marks down for.
@@ -453,7 +453,11 @@ SSL_CTX * TLSContext::context() {
     SSL_CTX_dane_enable(m_ssl_ctx);
     SSL_CTX_dane_set_flags(m_ssl_ctx, DANE_FLAG_NO_DANE_EE_NAMECHECKS);
     SSL_CTX_set_options(m_ssl_ctx, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_ALL);
-    SSL_CTX_set_verify(m_ssl_ctx, SSL_VERIFY_PEER, verify_callback_cb);
+    if (m_validation) {
+        SSL_CTX_set_verify(m_ssl_ctx, SSL_VERIFY_PEER, verify_callback_cb);
+    } else {
+        SSL_CTX_set_verify(m_ssl_ctx, SSL_VERIFY_NONE, verify_callback_cb);
+    }
 
     for (auto & identity : m_identities) {
         identity->apply(m_ssl_ctx);

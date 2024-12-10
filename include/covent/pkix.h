@@ -68,7 +68,7 @@ namespace covent::pkix {
         TLSContext() = delete;
         TLSContext(TLSContext const &) = delete;
         void operator = (TLSContext const &) = delete;
-        TLSContext(bool enabled, std::string const & domain);
+        TLSContext(bool enabled, bool validation, std::string const & domain);
         SSL_CTX* context();
         SSL * instantiate(bool connecting, std::string const & remote_domain);
         bool enabled();
@@ -76,6 +76,7 @@ namespace covent::pkix {
 
     private:
         bool m_enabled = true;
+        bool m_validation = true;
         std::string m_domain;
         std::string m_dhparam;
         std::string m_cipherlist;

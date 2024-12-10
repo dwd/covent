@@ -2,6 +2,8 @@
 // Created by dwd on 11/12/24.
 //
 #include <event2/http.h>
+#include <event2/bufferevent.h>
+#include <event2/bufferevent_ssl.h>
 
 #include "covent/http.h"
 #include "covent/covent.h"
@@ -13,8 +15,19 @@ namespace {
         auto req = reinterpret_cast<Request *>(v);
         req->complete();
     }
+
+    covent::dns::Resolver & resolver_default() {
+        static covent::dns::Resolver res{false, false, {}};
+        return res;
+    }
+
+    covent::pkix::TLSContext & tls_context_default() {
+        static covent::pkix::TLSContext ctx{true, true, "default_http"};
+        return ctx;
+    }
 }
-Request::Request(covent::http::Request::Method m, std::string uri) : method(m), m_uri(std::move(uri)) {
+Request::Request(covent::http::Request::Method m, std::string uri)
+: method(m), m_resolver(resolver_default()), m_tls_context(tls_context_default()), m_uri(std::move(uri))  {
     m_request = evhttp_request_new(request_complete, this);
     evhttp_request_own(m_request);
     auto parsed = evhttp_uri_parse(m_uri.c_str());
@@ -43,9 +56,25 @@ ConstFieldRef Request::operator[](const std::string & name) const {
 covent::task<Response> Request::operator()() {
     auto & loop = Loop::thread_loop();
     auto parsed = evhttp_uri_parse(m_uri.c_str());
+    std::string scheme = evhttp_uri_get_scheme(parsed);
+    auto default_port = 80;
+    bool ssl = false;
+    if (scheme == "https") {
+        default_port = 443;
+        ssl = true;
+    }
     auto port = evhttp_uri_get_port(parsed);
-    port = port != -1 ? port : 80;
-    auto conn = evhttp_connection_base_new(loop.event_base(), nullptr, evhttp_uri_get_host(parsed), port);
+    port = port != -1 ? port : default_port;
+    evhttp_connection * conn = nullptr;
+    std::string host = evhttp_uri_get_host(parsed);
+
+    if (ssl) {
+        SSL * ssl = m_tls_context.instantiate(true, evhttp_uri_get_host(parsed));
+        auto bev = bufferevent_openssl_socket_new(loop.event_base(), -1, ssl, BUFFEREVENT_SSL_CONNECTING, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
+        conn = evhttp_connection_base_bufferevent_new(loop.event_base(), nullptr, bev, host.c_str(), port);
+    } else {
+        conn = evhttp_connection_base_new(loop.event_base(), nullptr, evhttp_uri_get_host(parsed), port);
+    }
     std::string path{"/"};
     const char * path_str = path.c_str();
     if (auto p = evhttp_uri_get_path(parsed); p && p[0]) {
