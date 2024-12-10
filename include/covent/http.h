@@ -138,6 +138,32 @@ namespace covent {
             struct evhttp * m_server;
             std::list<covent::task<void>> m_in_flight;
         };
+        namespace exception {
+            class base : public std::runtime_error {
+            public:
+                using std::runtime_error::runtime_error;
+            };
+            class http_status : public base {
+            public:
+                http_status(int status, std::string const & what) : m_status(status), base(what) {}
+                auto status() {
+                    return m_status;
+                }
+
+            private:
+                int m_status;
+            };
+            class not_found : public http_status {
+            public:
+                not_found() : http_status(404, "Not found") {}
+                explicit not_found(std::string const & s) : http_status(404, s) {}
+            };
+            class internal : public http_status {
+            public:
+                internal() : http_status(500, "Internal Error") {}
+                explicit internal(std::string const & s) : http_status(500, s) {}
+            };
+        }
     }
 }
 

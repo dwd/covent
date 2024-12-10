@@ -22,9 +22,8 @@ namespace {
 	}
 }
 
-Endpoint::Endpoint(std::string const & path): m_path(path), m_handler([](evhttp_request * req) -> covent::task<int> {
-	evhttp_send_reply(req, 404, "Not found", nullptr);
-	co_return 404;
+Endpoint::Endpoint(std::string const & path): m_path(path), m_handler([](evhttp_request *) -> covent::task<int> {
+	throw exception::not_found();
 }) {}
 
 
@@ -41,8 +40,7 @@ covent::task<int> Endpoint::handler_low(evhttp_request * req) {
 
 	auto ret = m_endpoints.find(evhttp_uri_get_path(uri));
 	if (ret == m_endpoints.end()) {
-		evhttp_send_reply(req, 404, "Not found", nullptr);
-		co_return 404;
+		throw exception::not_found();
 	} else {
 		co_return co_await ret->second->handler(req);
 	}
@@ -62,10 +60,10 @@ Server::Server(unsigned short port, covent::pkix::TLSContext &tls_context) : m_t
 
 void Server::add(std::unique_ptr<Endpoint> && endpoint) {
     if (endpoint->path() == "/") {
-        if (m_root) throw std::runtime_error("Already have a root endpoint");
+        if (m_root) throw exception::base("Already have a root endpoint");
         m_root = std::move(endpoint);
     } else {
-        if (!m_root) throw std::runtime_error("No root endpoint");
+        if (!m_root) throw exception::base("No root endpoint");
         m_root->add(std::move(endpoint));
     }
 }
@@ -86,16 +84,27 @@ void Server::request_handler(struct evhttp_request *req) {
 	});
 	m_in_flight.erase(ret.begin(), ret.end());
 	m_in_flight.emplace_back(handler_low(req));
-	if (m_in_flight.rbegin()->start()) {
-		m_in_flight.pop_back();
+	try {
+		if (m_in_flight.rbegin()->start()) {
+			m_in_flight.pop_back();
+		}
+	} catch (exception::http_status & e) {
+		evhttp_send_reply(req, e.status(), e.what(), nullptr);
+	} catch (std::runtime_error & e) {
+		auto *reply = evbuffer_new();
+		evbuffer_add_printf(reply, "Runtime Exception: %s", e.what());
+		evhttp_send_reply(req, HTTP_INTERNAL, "Unexpected exception", reply);
+		evbuffer_free(reply);
 	}
 }
 
 covent::task<void> Server::handler_low(struct evhttp_request *req) {
 	try {
-		if (!m_root) throw std::runtime_error("Missing root endpoint");
+		if (!m_root) throw exception::base("Missing root endpoint");
 		auto response_code = co_await m_root->handler_low(req);
-		if (response_code == 0) throw std::runtime_error("Unknown error");
+		if (response_code == 0) throw exception::base("Unknown error");
+	} catch (exception::http_status & e) {
+		evhttp_send_reply(req, e.status(), e.what(), nullptr);
 	} catch (std::runtime_error & e) {
 		auto *reply = evbuffer_new();
 		evbuffer_add_printf(reply, "Runtime Exception: %s", e.what());
