@@ -14,6 +14,12 @@ namespace covent {
     struct task;
     template<typename T>
     struct instant_task;
+    namespace dns {
+        class Resolver;
+    }
+    namespace pkix {
+        class TLSContext;
+    }
 }
 
 #endif //COVENT_BASE_H

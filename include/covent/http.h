@@ -12,6 +12,7 @@
 #include "coroutine.h"
 #include "future.h"
 #include "dns.h"
+#include "http.h"
 #include "pkix.h"
 
 struct evhttp_request;
@@ -92,6 +93,7 @@ namespace covent {
             }
             Method const method;
         private:
+            Loop & m_loop;
             covent::dns::Resolver & m_resolver;
             // covent::pkix::PKIXValidator & m_validator;
             covent::pkix::TLSContext & m_tls_context;
@@ -99,17 +101,29 @@ namespace covent {
             evhttp_request * m_request;
             covent::future<void> m_completed;
         };
+        class Middleware {
+        public:
+            template<typename T>
+            requires std::is_invocable_r_v<covent::task<void>, T, evhttp_request *>
+            Middleware(T && t) : m_handler(t) {};
+
+            virtual covent::task<void> handle(struct evhttp_request * req);
+            virtual ~Middleware() = default;
+        private:
+            std::function<covent::task<void>(evhttp_request *)> m_handler;
+        };
         class Endpoint {
         public:
-            Endpoint(std::string const & path);
+            Endpoint(std::string path);
 
             template<typename T>
             requires std::is_invocable_r_v<covent::task<int>, T, evhttp_request *>
-            Endpoint(std::string  path, T && t): m_path(std::move(path)), m_handler(t) {}
+            Endpoint(std::string path, T && t): m_path(std::move(path)), m_handler(t) {}
 
             covent::task<int> handler_low(struct evhttp_request * req);
             virtual covent::task<int> handler(struct evhttp_request * req);
             void add(std::unique_ptr<Endpoint> && child);
+            void add(std::unique_ptr<Middleware> && child);
             auto const & path() const {
                 return m_path;
             }
@@ -117,6 +131,7 @@ namespace covent {
         private:
             const std::string m_path;
             std::map<std::string, std::unique_ptr<Endpoint>, std::less<>> m_endpoints;
+            std::list<std::unique_ptr<Middleware>> m_middleware;
             std::function<covent::task<int>(evhttp_request *)> m_handler;
         };
         class Server {

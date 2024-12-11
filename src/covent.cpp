@@ -1,5 +1,7 @@
 #include "covent/loop.h"
 #include "covent/core.h"
+#include "covent/dns.h"
+#include "covent/pkix.h"
 #include <event2/event.h>
 #include <event2/thread.h>
 #include <event2/listener.h>
@@ -184,4 +186,18 @@ void covent::Loop::remove(covent::Session &sess) {
 
 void covent::Loop::remove(std::shared_ptr<Session> const & sess) {
     m_sessions.erase(sess);
+}
+
+covent::dns::Resolver &covent::Loop::default_resolver() {
+    if (!m_default_resolver) {
+        m_default_resolver = std::make_unique<covent::dns::Resolver>(false, false, std::optional<std::string>{});
+    }
+    return *m_default_resolver;
+}
+
+covent::pkix::TLSContext &covent::Loop::default_tls_context() {
+    if (!m_default_tls_context) {
+        m_default_tls_context = std::make_unique<pkix::TLSContext>(true, false, "default");
+    }
+    return *m_default_tls_context;
 }

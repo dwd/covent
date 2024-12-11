@@ -15,19 +15,9 @@ namespace {
         auto req = reinterpret_cast<Request *>(v);
         req->complete();
     }
-
-    covent::dns::Resolver & resolver_default() {
-        static covent::dns::Resolver res{false, false, {}};
-        return res;
-    }
-
-    covent::pkix::TLSContext & tls_context_default() {
-        static covent::pkix::TLSContext ctx{true, true, "default_http"};
-        return ctx;
-    }
 }
 Request::Request(covent::http::Request::Method m, std::string uri)
-: method(m), m_resolver(resolver_default()), m_tls_context(tls_context_default()), m_uri(std::move(uri))  {
+: method(m), m_loop(Loop::thread_loop()), m_resolver(m_loop.default_resolver()), m_tls_context(m_loop.default_tls_context()), m_uri(std::move(uri))  {
     m_request = evhttp_request_new(request_complete, this);
     evhttp_request_own(m_request);
     auto parsed = evhttp_uri_parse(m_uri.c_str());

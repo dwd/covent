@@ -89,10 +89,13 @@ namespace covent {
         struct event_base * event_base() {
             return m_event_base.get();
         }
-
+        dns::Resolver & default_resolver();
+        pkix::TLSContext & default_tls_context();
     private:
         bool set_next_break();
 
+        std::unique_ptr<dns::Resolver> m_default_resolver;
+        std::unique_ptr<pkix::TLSContext> m_default_tls_context;
         std::unique_ptr<struct event_base, std::function<void(struct event_base *)>> m_event_base;
         std::set<std::shared_ptr<Session>, Compare<Session>> m_sessions;
         std::recursive_mutex m_scheduler_mutex;

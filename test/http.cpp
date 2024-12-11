@@ -86,3 +86,42 @@ TEST(HTTP_Server, Path) {
         EXPECT_EQ(resp.status(), 201);
     }
 }
+
+TEST(HTTP_Server, Middleware) {
+    covent::Loop loop;
+    covent::pkix::TLSContext tls(false, false,"localhost");
+    covent::http::Server srv(8001, tls);
+    srv.add(std::make_unique<covent::http::Endpoint>("/"));
+    srv.add(std::make_unique<covent::http::Endpoint>("/test", [](evhttp_request * req) -> covent::task<int> {
+        evhttp_send_reply(req, 201, "OK", nullptr);
+        co_return 201;
+    }));
+    auto new_endpoint = std::make_unique<covent::http::Endpoint>("/test2", [](evhttp_request * req) -> covent::task<int> {
+        evhttp_send_reply(req, 200, "OK", nullptr);
+        co_return 200;
+    });
+    new_endpoint->add(std::make_unique<covent::http::Middleware>([](evhttp_request * req) -> covent::task<void> {
+        throw covent::http::exception::http_status(401, "Not allowed");
+    }));
+    srv.add(std::move(new_endpoint));
+    {
+        covent::http::Request req(covent::http::Request::Method::GET, "http://localhost:8001/");
+        auto resp = loop.run_task(req());
+        EXPECT_EQ(resp.status(), 404);
+    }
+    {
+        covent::http::Request req(covent::http::Request::Method::GET, "http://localhost:8001/not-found");
+        auto resp = loop.run_task(req());
+        EXPECT_EQ(resp.status(), 404);
+    }
+    {
+        covent::http::Request req(covent::http::Request::Method::GET, "http://localhost:8001/test");
+        auto resp = loop.run_task(req());
+        EXPECT_EQ(resp.status(), 201);
+    }
+    {
+        covent::http::Request req(covent::http::Request::Method::GET, "http://localhost:8001/test2");
+        auto resp = loop.run_task(req());
+        EXPECT_EQ(resp.status(), 401);
+    }
+}

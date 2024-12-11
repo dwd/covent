@@ -6,6 +6,7 @@
 #include <event2/buffer.h>
 #include <event2/http.h>
 #include <algorithm>
+#include <utility>
 #include <event2/bufferevent_ssl.h>
 
 using namespace covent::http;
@@ -22,16 +23,26 @@ namespace {
 	}
 }
 
-Endpoint::Endpoint(std::string const & path): m_path(path), m_handler([](evhttp_request *) -> covent::task<int> {
+covent::task<void> Middleware::handle(evhttp_request * req) {
+	return m_handler(req);
+}
+
+Endpoint::Endpoint(std::string  path): m_path(std::move(path)), m_handler([](evhttp_request *) -> covent::task<int> {
 	throw exception::not_found();
 }) {}
-
 
 void Endpoint::add(std::unique_ptr<Endpoint> && endpoint) {
 	m_endpoints[endpoint->path()] = std::move(endpoint);
 }
 
+void Endpoint::add(std::unique_ptr<Middleware> && endpoint) {
+	m_middleware.emplace_back(std::move(endpoint));
+}
+
 covent::task<int> Endpoint::handler_low(evhttp_request * req) {
+	for (auto const & middleware : m_middleware) {
+		co_await middleware->handle(req);
+	}
 	auto * uri = evhttp_request_get_evhttp_uri(req);
 	auto * path = evhttp_uri_get_path(uri);
 	if (path == m_path) {
@@ -42,7 +53,7 @@ covent::task<int> Endpoint::handler_low(evhttp_request * req) {
 	if (ret == m_endpoints.end()) {
 		throw exception::not_found();
 	} else {
-		co_return co_await ret->second->handler(req);
+		co_return co_await ret->second->handler_low(req);
 	}
 }
 
