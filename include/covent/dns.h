@@ -180,10 +180,13 @@ namespace covent::dns {
     class Resolver {
     public:
         Resolver(bool dnssec_required, bool tls, std::optional<std::string> ta_file);
+        explicit Resolver(bool tls);
         Resolver(Resolver const &) = delete;
         Resolver(Resolver &&) = delete;
 
         ~Resolver();
+
+        void add_data(std::string const & zone_record);
 
         covent::task<answers::SRV> srv(std::string const & service, std::string const &domain);
         covent::task<answers::SVCB> svcb(std::string const & service, std::string const &domain);
@@ -193,7 +196,10 @@ namespace covent::dns {
         covent::task<answers::TLSA> tlsa(short unsigned int port, std::string const &hostname);
 
         void event_callback();
+
     private:
+        void setup_unbound(bool, std::optional<std::string> const &);
+
         bool m_dnssec_required;
         event * m_ub_event = nullptr;
         struct ctx_holder {

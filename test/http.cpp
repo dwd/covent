@@ -8,14 +8,14 @@
 
 TEST(HTTP, RequestHeaderRead) {
     covent::Loop loop;
-    covent::http::Request req(covent::http::Request::Method::GET, "https://www.google.com");
+    covent::http::Request req(covent::http::Method::GET, "https://www.google.com");
     std::string_view host = req["Host"];
     EXPECT_EQ(host, "www.google.com");
 }
 
 TEST(HTTP, RequestHeaderReadCmp) {
     covent::Loop loop;
-    covent::http::Request req(covent::http::Request::Method::GET, "https://www.google.com");
+    covent::http::Request req(covent::http::Method::GET, "https://www.google.com");
     EXPECT_EQ(req["Host"], "www.google.com");
     EXPECT_NE(req["Host"], "www.not-google.com");
     EXPECT_LT(req["Host"], "zzzzzzzz");
@@ -23,13 +23,13 @@ TEST(HTTP, RequestHeaderReadCmp) {
 
 TEST(HTTP, RequestHeaderNonExist) {
     covent::Loop loop;
-    covent::http::Request req(covent::http::Request::Method::GET, "https://www.google.com");
+    covent::http::Request req(covent::http::Method::GET, "https://www.google.com");
     EXPECT_THROW(std::string_view host = req["Not-Host"], std::runtime_error);
 }
 
 TEST(HTTP, RequestHeaderSet) {
     covent::Loop loop;
-    covent::http::Request req(covent::http::Request::Method::GET, "https://www.google.com");
+    covent::http::Request req(covent::http::Method::GET, "https://www.google.com");
     EXPECT_FALSE(req["New-Header"]);
     req["New-Header"] = "Test Value";
     EXPECT_EQ(req["New-Header"], "Test Value");
@@ -37,18 +37,33 @@ TEST(HTTP, RequestHeaderSet) {
 
 TEST(HTTP, RequestSimple) {
     covent::Loop loop;
-    covent::http::Request req(covent::http::Request::Method::GET, "https://www.google.com");
+    covent::http::Request req(covent::http::Method::GET, "https://www.google.com");
     auto resp = loop.run_task(req());
-    EXPECT_EQ(resp.status(), 200);
+    EXPECT_EQ(resp->status(), 200);
+}
+
+TEST(HTTP_Client, RequestSimple) {
+    covent::Loop loop;
+    covent::pkix::TLSContext tls(true, true, "localhost");
+    covent::dns::Resolver res(false);
+    covent::pkix::PKIXValidator validator(true, true);
+    covent::http::Client client(res, validator, tls, "https://www.google.com");
+    auto req = client.request(covent::http::Method::GET, "https://www.google.com", {});
+    auto resp = loop.run_task(req());
+    EXPECT_EQ(resp->status(), 200);
+    auto req2 = client.request(covent::http::Method::GET, "https://www.google.com", {});
+    auto resp2 = loop.run_task(req2());
+    EXPECT_EQ(resp->status(), 200);
 }
 
 TEST(HTTP_Server, MissingRoot) {
     covent::Loop loop;
     covent::pkix::TLSContext tls(false, false,"localhost");
     covent::http::Server srv(8001, tls);
-    covent::http::Request req(covent::http::Request::Method::GET, "http://localhost:8001/");
+    loop.run_once(false);
+    covent::http::Request req(covent::http::Method::GET, "http://localhost:8001/");
     auto resp = loop.run_task(req());
-    EXPECT_EQ(resp.status(), 500);
+    EXPECT_EQ(resp->status(), 500);
 }
 
 TEST(HTTP_Server, NotFound) {
@@ -56,9 +71,9 @@ TEST(HTTP_Server, NotFound) {
     covent::pkix::TLSContext tls(false, false,"localhost");
     covent::http::Server srv(8001, tls);
     srv.add(std::make_unique<covent::http::Endpoint>("/"));
-    covent::http::Request req(covent::http::Request::Method::GET, "http://localhost:8001/");
+    covent::http::Request req(covent::http::Method::GET, "http://localhost:8001/");
     auto resp = loop.run_task(req());
-    EXPECT_EQ(resp.status(), 404);
+    EXPECT_EQ(resp->status(), 404);
 }
 
 TEST(HTTP_Server, Path) {
@@ -71,19 +86,19 @@ TEST(HTTP_Server, Path) {
         co_return 201;
     }));
     {
-        covent::http::Request req(covent::http::Request::Method::GET, "http://localhost:8001/");
+        covent::http::Request req(covent::http::Method::GET, "http://localhost:8001/");
         auto resp = loop.run_task(req());
-        EXPECT_EQ(resp.status(), 404);
+        EXPECT_EQ(resp->status(), 404);
     }
     {
-        covent::http::Request req(covent::http::Request::Method::GET, "http://localhost:8001/not-found");
+        covent::http::Request req(covent::http::Method::GET, "http://localhost:8001/not-found");
         auto resp = loop.run_task(req());
-        EXPECT_EQ(resp.status(), 404);
+        EXPECT_EQ(resp->status(), 404);
     }
     {
-        covent::http::Request req(covent::http::Request::Method::GET, "http://localhost:8001/test");
+        covent::http::Request req(covent::http::Method::GET, "http://localhost:8001/test");
         auto resp = loop.run_task(req());
-        EXPECT_EQ(resp.status(), 201);
+        EXPECT_EQ(resp->status(), 201);
     }
 }
 
@@ -105,23 +120,23 @@ TEST(HTTP_Server, Middleware) {
     }));
     srv.add(std::move(new_endpoint));
     {
-        covent::http::Request req(covent::http::Request::Method::GET, "http://localhost:8001/");
+        covent::http::Request req(covent::http::Method::GET, "http://localhost:8001/");
         auto resp = loop.run_task(req());
-        EXPECT_EQ(resp.status(), 404);
+        EXPECT_EQ(resp->status(), 404);
     }
     {
-        covent::http::Request req(covent::http::Request::Method::GET, "http://localhost:8001/not-found");
+        covent::http::Request req(covent::http::Method::GET, "http://localhost:8001/not-found");
         auto resp = loop.run_task(req());
-        EXPECT_EQ(resp.status(), 404);
+        EXPECT_EQ(resp->status(), 404);
     }
     {
-        covent::http::Request req(covent::http::Request::Method::GET, "http://localhost:8001/test");
+        covent::http::Request req(covent::http::Method::GET, "http://localhost:8001/test");
         auto resp = loop.run_task(req());
-        EXPECT_EQ(resp.status(), 201);
+        EXPECT_EQ(resp->status(), 201);
     }
     {
-        covent::http::Request req(covent::http::Request::Method::GET, "http://localhost:8001/test2");
+        covent::http::Request req(covent::http::Method::GET, "http://localhost:8001/test2");
         auto resp = loop.run_task(req());
-        EXPECT_EQ(resp.status(), 401);
+        EXPECT_EQ(resp->status(), 401);
     }
 }

@@ -6,6 +6,7 @@
 #define COVENT_HTTP_H
 
 #include <string_view>
+#include <tuple>
 #include <utility>
 #include <event2/http.h>
 
@@ -23,9 +24,69 @@ struct bufferevent;
 
 namespace covent {
     namespace http {
+        using Header = std::map<std::string, std::string, std::less<>>;
+        enum class Method {
+            GET, POST, PUT, DELETE
+        };
+        class URI {
+        public:
+            std::string scheme;
+            std::optional<uint16_t> port;
+            std::string host;
+            std::string netloc;
+            std::string path;
+
+            URI(std::string_view text);
+        private:
+            void parse(std::string_view text);
+        };
+
+        class Message {
+        public:
+            Message() = default;
+            explicit Message(URI const & u);
+            explicit Message(std::string_view u);
+            Header header;
+
+            int status_code = -1; // response
+            std::string status_text;
+
+            Method method = Method::GET; // request
+            std::optional<URI> uri;
+
+            std::string body;
+            bool complete = false;
+            bool request = false;
+
+            unsigned long process(std::string_view data);
+            [[nodiscard]] std::string render_request() const;
+            [[nodiscard]] std::string render_header() const;
+            [[nodiscard]] std::string render_body() const;
+        private:
+            bool header_read = false;
+            bool chunked = false;
+            std::optional<std::size_t> body_remaining;
+
+            unsigned long process_status(std::string_view & data);
+            unsigned long process_request(std::string_view & data);
+            unsigned long process_header(std::string_view & data);
+
+            void check_body_type();
+
+            unsigned long read_body(std::string_view &data);
+
+            std::tuple<unsigned long, unsigned long> read_body_chunk_header(std::string_view &data);
+
+            unsigned long read_body_chunk_normal(std::string_view &data, unsigned long chunk_len);
+
+            unsigned long read_body_chunk_final(std::string_view &data);
+
+            unsigned long read_body_chunked(std::string_view &data);
+        };
+
         class ConstFieldRef {
         public:
-            ConstFieldRef(evkeyvalq *, std::string const & field);
+            ConstFieldRef(Header & header, std::string const & field);
 
             std::string_view const &field() const;
             operator std::string_view() const;
@@ -44,8 +105,8 @@ namespace covent {
             }
 
         protected:
-            std::string const & m_field;
-            evkeyvalq * m_header;
+            std::string m_field;
+            Header & m_header;
         };
         class FieldRef : public ConstFieldRef {
         public:
@@ -55,50 +116,59 @@ namespace covent {
         };
 
         class Request;
+        class Client;
         class Response {
         public:
-            explicit Response(evhttp_request *);
-            ~Response();
+            explicit Response(std::unique_ptr<Message> &&);
 
             [[nodiscard]] int status() const;
 
             FieldRef operator [] (std::string const &);
             ConstFieldRef operator [] (std::string const &) const;
-            auto const & body() const {
-                return m_body;
-            }
+            std::string_view body() const;
         private:
-            [[nodiscard]] std::string_view body_low() const;
+            std::unique_ptr<Message> m_response;
+        };
+        class Client {
+        public:
+            Client(covent::dns::Resolver &, covent::pkix::PKIXValidator &, covent::pkix::TLSContext &, URI const & uri);
+            Client(covent::dns::Resolver &, covent::pkix::PKIXValidator &, covent::pkix::TLSContext &, std::string_view uri);
 
-            evhttp_request * m_request;
-            std::string m_body;
+            Request request(Method, URI const & uri, std::optional<std::string> body = {});
+            Request request(Method, std::string_view uri, std::optional<std::string> body = {});
+
+            covent::task<std::unique_ptr<Response>> send(Request &);
+
+        private:
+            Loop & m_loop;
+            URI m_uri;
+            std::unique_ptr<Session> m_session;
+            covent::dns::Resolver & m_resolver;
+            covent::pkix::PKIXValidator & m_validator;
+            covent::pkix::TLSContext & m_tls_context;
         };
         class Request {
         public:
-            enum class Method {
-                GET, POST, PUT, DELETE
-            };
-            Request(Method, std::string uri);
-            Request(covent::dns::Resolver &, Method, std::string uri);
-            Request(covent::pkix::PKIXValidator &, covent::dns::Resolver &, Method, std::string uri);
-            ~Request();
+            Request(Method, URI const & uri);
+            Request(Method, std::string_view uri);
+            Request(Client &, Method, URI const & uri);
             FieldRef operator [] (std::string const &);
             ConstFieldRef operator [] (std::string const &) const;
-            covent::task<Response> operator () ();
+            covent::task<std::unique_ptr<Response>> operator () ();
+
+            void send(Session &sess) const;
 
             void complete();
 
-            std::string const & uri() const {
-                return m_uri;
+            URI const & uri() const {
+                return m_request->uri.value();
             }
             Method const method;
         private:
             Loop & m_loop;
-            covent::dns::Resolver & m_resolver;
-            // covent::pkix::PKIXValidator & m_validator;
-            covent::pkix::TLSContext & m_tls_context;
-            std::string m_uri;
-            evhttp_request * m_request;
+            std::unique_ptr<Message> m_request;
+            std::unique_ptr<Client> m_client_temp;
+            Client & m_client;
             covent::future<void> m_completed;
         };
         class Middleware {

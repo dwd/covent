@@ -205,3 +205,21 @@ TEST(CoroThrow, nested_run_task) {
     covent::Loop loop;
     EXPECT_ANY_THROW(loop.run_task(outer()));
 }
+
+namespace {
+    covent::task<std::unique_ptr<int>> unique_ptr_int(int x) {
+        co_return std::make_unique<int>(x);
+    }
+    covent::task<std::string> std_string(const char * x) {
+        co_return x;
+    }
+}
+
+TEST(CoroReturn, movable) {
+    covent::Loop loop;
+    EXPECT_EQ(*loop.run_task(unique_ptr_int(42)), 42);
+}
+TEST(CoroReturn, copy) {
+    covent::Loop loop;
+    EXPECT_EQ(loop.run_task(std_string("42")), "42");
+}

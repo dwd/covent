@@ -201,3 +201,10 @@ covent::pkix::TLSContext &covent::Loop::default_tls_context() {
     }
     return *m_default_tls_context;
 }
+
+covent::pkix::PKIXValidator &covent::Loop::default_pkix_validator() {
+    if (!m_default_pkix_validator) {
+        m_default_pkix_validator = std::make_unique<pkix::PKIXValidator>();
+    }
+    return *m_default_pkix_validator;
+}

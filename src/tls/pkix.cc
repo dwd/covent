@@ -174,7 +174,9 @@ EjhZjvPJOKqTisDI6g9A9ak87cfIh26eYj+vm5JOnjYltmaZ6U83AgEC
 PKIXIdentity::PKIXIdentity(std::string const & cert_chain, std::string const & pkey) : m_cert_chain_file(cert_chain), m_pkey_file(pkey) {
 }
 
-PKIXValidator::PKIXValidator(bool crls, bool use_system_trust) : m_crls(crls), m_system_trust(use_system_trust) {
+PKIXValidator::PKIXValidator() : m_enabled(false), m_crls(false), m_system_trust(false) {
+}
+PKIXValidator::PKIXValidator(bool crls, bool use_system_trust) : m_enabled(true), m_crls(crls), m_system_trust(use_system_trust) {
 }
 
 TLSContext::TLSContext(bool enabled, bool validation, std::string const & domain) : m_enabled(enabled), m_validation(validation), m_domain(domain) {
@@ -232,6 +234,7 @@ covent::task<void> PKIXValidator::fetch_crls(const SSL *ssl, X509 *cert) {
             ERR_clear_error();
         }
     }
+    co_return;
 }
 
 namespace {
@@ -263,6 +266,7 @@ namespace {
  * @return true if TLS verified correctly.
  */
 covent::task<bool> PKIXValidator::verify_tls(SSL * ssl, std::string remote_domain) {
+    if (!m_enabled) co_return true;
     if (!ssl) co_return false; // No TLS.
     auto *cert = SSL_get_peer_certificate(ssl);
     if (!cert) {

@@ -4,7 +4,7 @@ from conan.tools.build import check_min_cppstd
 
 class ConanApplication(ConanFile):
     name = "covent"
-    version = "0.1.3"
+    version = "0.1.4"
     email = "Dave Cridland <dave@cridland.net>"
     package_type = "library"
     settings = "os", "compiler", "build_type", "arch"

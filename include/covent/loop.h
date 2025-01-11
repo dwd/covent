@@ -18,6 +18,8 @@
 #include <set>
 #include <event2/util.h>
 
+#include "pkix.h"
+
 struct event_base;
 
 template<>
@@ -75,7 +77,12 @@ namespace covent {
         void shutdown();
 
         std::shared_ptr<Session> add(std::shared_ptr<Session> const &);
-        std::shared_ptr<Session> session(Session::id_type id) const;
+        template<typename SessionType, typename ...Args>
+        requires std::derived_from<SessionType, Session>
+        [[nodiscard]] std::shared_ptr<SessionType> add(Args && ...args) {
+            return std::dynamic_pointer_cast<SessionType>(add(std::make_shared<SessionType>(args...)));
+        }
+        [[nodiscard]] std::shared_ptr<Session> session(Session::id_type id) const;
         void remove(Session & session);
         void remove(std::shared_ptr<Session> const & session);
 
@@ -91,12 +98,16 @@ namespace covent {
         }
         dns::Resolver & default_resolver();
         pkix::TLSContext & default_tls_context();
+
+        covent::pkix::PKIXValidator &default_pkix_validator();
+
     private:
         bool set_next_break();
 
+        std::unique_ptr<struct event_base, std::function<void(struct event_base *)>> m_event_base;
         std::unique_ptr<dns::Resolver> m_default_resolver;
         std::unique_ptr<pkix::TLSContext> m_default_tls_context;
-        std::unique_ptr<struct event_base, std::function<void(struct event_base *)>> m_event_base;
+        std::unique_ptr<pkix::PKIXValidator> m_default_pkix_validator;
         std::set<std::shared_ptr<Session>, Compare<Session>> m_sessions;
         std::recursive_mutex m_scheduler_mutex;
         std::multimap<struct timeval, std::function<void()>> m_pending_actions;

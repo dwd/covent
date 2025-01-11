@@ -206,6 +206,14 @@ void Resolver::event_callback() {
 }
 
 Resolver::Resolver(bool dnssec_required, bool tls, std::optional<std::string> ta_file) : m_dnssec_required(dnssec_required) {
+    setup_unbound(tls, ta_file);
+}
+
+Resolver::Resolver(bool tls) : m_dnssec_required(false) {
+    setup_unbound(tls, {});
+}
+
+void Resolver::setup_unbound(bool tls, std::optional<std::string> const & ta_file) {
     m_ub_ctx = std::make_shared<ctx_holder>(ub_ctx_create());
     ub_ctx_set_tls(m_ub_ctx->get(), tls ? 1 : 0);
     // TODO : ub_ctx_set_fwd(m_ub_ctx->get(), "");
@@ -223,6 +231,7 @@ Resolver::Resolver(bool dnssec_required, bool tls, std::optional<std::string> ta
             throw std::runtime_error(ub_strerror(retval));
         }
     }
+    // ub_ctx_data_add(m_ub_ctx->get(), /* zone-ish entry here */);
     covent::Loop &loop = covent::Loop::thread_loop();
     m_ub_event = event_new(loop.event_base(), ub_fd(m_ub_ctx->get()), EV_READ|EV_PERSIST, event_callback_anon, this);
     resolvers().insert(this);
@@ -353,6 +362,10 @@ covent::task<answers::TLSA> Resolver::tlsa(unsigned short port, std::string cons
         }
     }
     co_return tlsa;
+}
+
+void Resolver::add_data(std::string const & zone_record) {
+    ub_ctx_data_add(m_ub_ctx->get(), zone_record.c_str());
 }
 
 Resolver::~Resolver() {

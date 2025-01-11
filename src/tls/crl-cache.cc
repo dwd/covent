@@ -42,12 +42,12 @@ covent::task<std::tuple<std::string, int, X509_CRL *>> CrlCache::do_crl(std::str
         }
     }
     // Step three: Actually issue a new HTTP request:
-    covent::http::Request req(covent::http::Request::Method::GET, uri);
+    covent::http::Request req(covent::http::Method::GET, http::URI(uri));
     auto response = co_await req();
-    int status_code = response.status();
+    int status_code = response->status();
     // METRE_LOG(Log::INFO, "HTTP GET for " << uri << " returned " << status_code);
     if ((status_code / 100) == 2) {
-        auto body = response.body();
+        auto body = response->body();
         auto body_start = reinterpret_cast<const unsigned char *>(body.data());
         X509_CRL *data = d2i_X509_CRL(nullptr, &body_start, body.size());
         if (data) {

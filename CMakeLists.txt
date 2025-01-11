@@ -15,6 +15,9 @@ find_package(SigSlot)
 find_package(unbound)
 find_package(ICU)
 find_package(OpenSSL)
+find_package(fmt)
+find_package(spdlog)
+find_package(yaml-cpp)
 
 set(COVENT_HEADERS
         include/covent/covent.h
@@ -44,7 +47,13 @@ set(COVENT_SOURCES
         src/tls/pkix.cc
         src/tls/crl-cache.cc
         include/covent/sleep.h
-        src/http/server.cpp)
+        src/http/server.cpp
+        src/application.cpp
+        src/service.cpp
+        src/http/client.cpp
+        src/http/message.cpp
+        src/http/uri.cpp
+)
 
 #add_library(covent SHARED ${COVENT_SOURCES})
 add_library(covent_static STATIC ${COVENT_SOURCES})
@@ -59,7 +68,7 @@ target_include_directories(covent_static PUBLIC
         $<INSTALL_INTERFACE:include>  # <prefix>/ include/ mylib
 )
 #target_link_libraries(covent PUBLIC libevent::libevent sigslot::sigslot unbound::unbound ICU::uc ICU::i18n OpenSSL::SSL OpenSSL::Crypto)
-target_link_libraries(covent_static PUBLIC libevent::libevent sigslot::sigslot unbound::unbound ICU::uc ICU::i18n OpenSSL::SSL OpenSSL::Crypto)
+target_link_libraries(covent_static PUBLIC libevent::libevent sigslot::sigslot unbound::unbound ICU::uc ICU::i18n OpenSSL::SSL OpenSSL::Crypto fmt::fmt spdlog::spdlog)
 #set_target_properties(covent PROPERTIES EXPORT_NAME covent)
 
 install(DIRECTORY include/covent TYPE INCLUDE)
@@ -89,6 +98,10 @@ if(COVENT_BUILD_TESTS)
             test/dns-utils.cc
             test/resolver.cc
             test/crls.cpp
+            test/app.cpp
+            test/service.cpp
+            test/http-session.cpp
+            test/uri.cpp
     )
     target_include_directories(covent-test SYSTEM PUBLIC include)
     target_link_libraries(covent-test PUBLIC covent_static GTest::gtest)

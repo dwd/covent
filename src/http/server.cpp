@@ -64,7 +64,7 @@ covent::task<int> Endpoint::handler(evhttp_request * req) {
 Server::Server(unsigned short port, covent::pkix::TLSContext &tls_context) : m_tls_context(tls_context) {
 	auto & loop = covent::Loop::thread_loop();
     m_server = evhttp_new(loop.event_base());
-    evhttp_bind_socket(m_server, "0.0.0.0", port);
+    evhttp_bind_socket(m_server, "::1", port);
     evhttp_set_bevcb(m_server, bufferevent_cb, this);
     evhttp_set_gencb(m_server, request_cb, this);
 }

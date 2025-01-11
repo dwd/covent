@@ -71,7 +71,7 @@ namespace covent {
         void write(std::string_view data); // Fire and forget writing.
         [[nodiscard]] task<void> flush(std::string_view data = {}); // Awaitable writing.
         SSL * ssl() const;
-        void ssl(SSL * s, bool connecting);
+        sigslot::signal<> & ssl(SSL * s, bool connecting);
 
         task<void> connect(const struct sockaddr *, size_t);
         template<typename S>
@@ -80,6 +80,8 @@ namespace covent {
             return connect(base_addr, sizeof(S));
         }
         void close();
+
+        bufferevent *eject();
 
         id_type id() const {
             return m_id;

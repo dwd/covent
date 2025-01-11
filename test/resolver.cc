@@ -45,3 +45,14 @@ TEST(Resolver, wiggle_v6) {
     auto address = covent::address_tostring(&result.addr[0]);
     EXPECT_EQ(address, "2a02:8010:800b::1");
 }
+
+TEST(Resolver, faked_data) {
+    covent::Loop loop;
+    covent::dns::Resolver res(false);
+    res.add_data("test.example. IN A 127.127.127.127");
+    auto result = loop.run_task(res.address_v4("test.example"));
+    EXPECT_TRUE(result.error.empty());
+    EXPECT_EQ(result.dnssec, false); // Unfortunately.
+    EXPECT_EQ(result.addr.size(), 1);
+    EXPECT_EQ(covent::address_tostring(&result.addr[0]), "127.127.127.127");
+}

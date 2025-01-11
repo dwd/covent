@@ -49,7 +49,7 @@ namespace covent::pkix {
 
     class PKIXValidator {
     public:
-        PKIXValidator() = delete;
+        PKIXValidator();
         PKIXValidator(PKIXValidator const &) = delete;
         explicit PKIXValidator(bool crls, bool use_system_trust);
         void add_trust_anchor(std::string const & trust_anchor);
@@ -57,6 +57,7 @@ namespace covent::pkix {
         covent::task<void> fetch_crls(const SSL *, X509 * cert);
 
     private:
+        bool m_enabled;
         bool m_crls;
         bool m_system_trust;
         std::set<std::string, std::less<>> m_trust_anchors;
@@ -74,6 +75,49 @@ namespace covent::pkix {
         bool enabled();
         void add_identity(std::unique_ptr<PKIXIdentity> && identity);
 
+        void enabled(bool e);
+        bool validation() const {
+            return m_validation;
+        }
+        void validation(bool v) {
+            m_validation = v;
+        }
+        std::string domain() const {
+            return m_domain;
+        }
+        void domain(std::string const & d) {
+            m_domain = d;
+        }
+        std::string dhparam() const {
+            return m_dhparam;
+        }
+        void dhparam(std::string const & d) {
+            m_dhparam = d;
+        }
+        std::string cipherlist() const {
+            return m_cipherlist;
+        }
+        void cipherlist(std::string const & c) {
+            m_cipherlist = c;
+        }
+        int min_version() const {
+            return m_min_version;
+        }
+        void min_version(int m) {
+            m_min_version = m;
+        }
+        int max_version() const {
+            return m_max_version;
+        }
+        std::string max_version_str() const;
+        void max_version(int m) {
+            m_max_version = m;
+        }
+        void max_version(std::string const &);
+        auto const & identities() const {
+            return m_identities;
+        }
+
     private:
         bool m_enabled = true;
         bool m_validation = true;
@@ -84,6 +128,7 @@ namespace covent::pkix {
         int m_max_version;
         std::set<std::unique_ptr<PKIXIdentity>> m_identities;
         SSL_CTX * m_ssl_ctx = nullptr;
+        Service * m_service;
         // spdlog::logger m_log;
     };
 

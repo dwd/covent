@@ -14,6 +14,7 @@ namespace covent {
     struct task;
     template<typename T>
     struct instant_task;
+    class Service;
     namespace dns {
         class Resolver;
     }
