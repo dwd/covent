@@ -43,7 +43,6 @@ set(COVENT_SOURCES
         src/http/request.cpp
         src/http/response.cpp
         src/dns/dns.cc
-        src/dns/discovery.cpp
         src/tls/pkix.cc
         src/tls/crl-cache.cc
         include/covent/sleep.h

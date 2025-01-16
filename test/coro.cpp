@@ -175,6 +175,56 @@ TEST(CoroGather, gather) {
 }
 
 namespace {
+    covent::task<int> winner() {
+        co_return 1;
+    }
+    covent::task<int> hare() {
+        co_await covent::sleep(0.3);
+        co_return 2;
+    }
+    covent::task<int> tortoise() {
+        co_await covent::sleep(0.1);
+        co_await covent::sleep(0.1);
+        co_return 3;
+    }
+}
+
+TEST(CoroRace, race_instant_single) {
+    covent::Loop loop;
+    auto ret= loop.run_task(covent::race({
+        winner()
+    }));
+    EXPECT_EQ(ret, 1);
+}
+
+TEST(CoroRace, race_sleep_single) {
+    covent::Loop loop;
+    auto ret= loop.run_task(covent::race({
+        tortoise()
+    }));
+    EXPECT_EQ(ret, 3);
+}
+
+TEST(CoroRace, race_all) {
+    covent::Loop loop;
+    auto ret= loop.run_task(covent::race({
+        winner(),
+        hare(),
+        tortoise()
+    }));
+    EXPECT_EQ(ret, 1);
+}
+
+TEST(CoroRace, race_classic) {
+    covent::Loop loop;
+    auto ret= loop.run_task(covent::race({
+        hare(),
+        tortoise()
+    }));
+    EXPECT_EQ(ret, 3);
+}
+
+namespace {
     covent::task<void> inner() {
         co_await covent::own_promise<covent::task<void>::promise_type>();
         throw std::runtime_error("Whoops");

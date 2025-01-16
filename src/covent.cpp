@@ -2,6 +2,7 @@
 #include "covent/core.h"
 #include "covent/dns.h"
 #include "covent/pkix.h"
+#include "covent/gather.h"
 #include <event2/event.h>
 #include <event2/thread.h>
 #include <event2/listener.h>
@@ -62,16 +63,9 @@ void covent::Loop::run_once(bool block) {
             }
         }
         if (run_now.empty()) break;
-        for (auto & fn : run_now) {
+        for (auto const & fn : run_now) {
             fn();
         }
-    }
-}
-
-void covent::Loop::run_until(std::function<bool()> const & fn) {
-    while (!m_shutdown) {
-        if (fn()) break;
-        run_once(true);
     }
 }
 
@@ -179,7 +173,7 @@ std::shared_ptr<covent::Session> covent::Loop::session(Session::id_type id) cons
     return *result;
 }
 
-void covent::Loop::remove(covent::Session &sess) {
+void covent::Loop::remove(const covent::Session &sess) {
     auto ptr = session(sess.id());
     remove(ptr);
 }
@@ -207,4 +201,8 @@ covent::pkix::PKIXValidator &covent::Loop::default_pkix_validator() {
         m_default_pkix_validator = std::make_unique<pkix::PKIXValidator>();
     }
     return *m_default_pkix_validator;
+}
+
+covent::task<void> covent::detail::dummy() {
+    co_return;
 }

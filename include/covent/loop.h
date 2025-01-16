@@ -59,7 +59,14 @@ namespace covent {
 
         void run_once(bool block); // Run a single cycle, including deferred calls.
 
-        void run_until(std::function<bool()> const&);
+        template<typename Func>
+        void run_until(Func fn) {
+            while (!m_shutdown) {
+                if (fn()) break;
+                run_once(true);
+            }
+        }
+
         void run_until_complete(); // Run single cycles until no sessions or deferred calls exist. A listening session will never end!
         void run_until_complete(Session const &); // Run single cycles until this session is closed.
         template<typename V>
@@ -83,7 +90,7 @@ namespace covent {
             return std::dynamic_pointer_cast<SessionType>(add(std::make_shared<SessionType>(args...)));
         }
         [[nodiscard]] std::shared_ptr<Session> session(Session::id_type id) const;
-        void remove(Session & session);
+        void remove(Session const & session);
         void remove(std::shared_ptr<Session> const & session);
 
         void listen(ListenerBase &);
