@@ -88,7 +88,7 @@ namespace covent {
         std::optional<V> m_value;
         std::exception_ptr m_except;
         mutable std::coroutine_handle<> m_coro = std::noop_coroutine();
-        mutable std::weak_ptr<bool> m_liveness;
+        mutable std::weak_ptr<bool> m_liveness = {};
         std::shared_ptr<bool> m_dummy = std::make_shared<bool>(true);
     };
     template<>

@@ -188,14 +188,27 @@ TLSContext::TLSContext(bool enabled, bool validation, std::string const & domain
     }
 }
 
+TLSContext::~TLSContext() {
+    if (m_ssl_ctx) {
+        SSL_CTX_free(m_ssl_ctx);
+    }
+}
+
+
 covent::task<void> PKIXValidator::fetch_crls(const SSL *ssl, X509 *cert) {
     STACK_OF(X509) *chain = SSL_get_peer_cert_chain(ssl);
     const SSL_CTX *ctx = SSL_get_SSL_CTX(ssl);
     X509_STORE *store = SSL_CTX_get_cert_store(ctx);
     X509_STORE_CTX *st = X509_STORE_CTX_new();
+    struct destroy_store {
+        X509_STORE_CTX * st;
+        ~destroy_store() {
+            if (st) X509_STORE_CTX_free(st);
+        }
+    } store_keeper = {st};
     X509_STORE_CTX_init(st, store, cert, chain);
     X509_verify_cert(st);
-    STACK_OF(X509) *verified = X509_STORE_CTX_get1_chain(st);
+    STACK_OF(X509) *verified = X509_STORE_CTX_get0_chain(st);
     std::set<std::string, std::less<>> all_crls;
     for (int certnum = 0; certnum != sk_X509_num(verified); ++certnum) {
         auto current_cert = sk_X509_value(verified, certnum);

@@ -204,7 +204,7 @@ namespace covent::dns {
         event * m_ub_event = nullptr;
         struct ctx_holder {
             ub_ctx * ctx;
-            ub_ctx * get() {
+            ub_ctx * get() const {
                 return ctx;
             }
             ~ctx_holder();
@@ -217,7 +217,7 @@ namespace covent::dns {
 
             query(Resolver & r, int a) : resolver(r), async_id(a) {
             }
-            query(query && o) : resolver(o.resolver), async_id(o.async_id) {
+            query(query && o)  noexcept : resolver(o.resolver), async_id(o.async_id) {
                 o.async_id = -1;
             }
             query(query const &) = delete;

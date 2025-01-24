@@ -64,9 +64,14 @@ namespace covent {
         if constexpr (!std::is_same_v<T, detail::forever>) {
             timer = detail::timeout(timeout);
             timer.handle.promise().parent = dummy_task.handle;
+            timer.start();
         }
         // Now co_wait the dummy, making us the (grand)parent of the tasks:
         co_await dummy_task;
+        // Detatch it, otherwise things will explode should any of the other tasks complete later.
+        for (auto & task : tasks) {
+            task.handle.promise().parent = std::coroutine_handle<>{};
+        }
         // So, one of the tasks has finished - look through and find it, and return the result.
         for (auto & task : tasks) {
             if (task.done()) {

@@ -60,11 +60,11 @@ namespace covent {
     struct coroutine_switch {
         static constexpr bool no_loop_resume = true;
         std::coroutine_handle<> handle;
-        bool await_ready() const noexcept {
+        [[nodiscard]] bool await_ready() const noexcept {
             return false; // Say we'll suspend to get await_suspend called.
         }
         void await_resume() const noexcept {}
-        std::coroutine_handle<> await_suspend(std::coroutine_handle<> h) const noexcept {
+        [[nodiscard]] std::coroutine_handle<> await_suspend(std::coroutine_handle<> h) const noexcept {
             return handle; // Always suspend, and switch to the other.
         }
         auto & operator co_await() const {
@@ -108,19 +108,19 @@ namespace covent {
 
             struct final_awaiter
             {
-                bool await_ready() const noexcept { return false; }
+                [[nodiscard]] bool await_ready() const noexcept { return false; }
                 void await_resume() const noexcept {}
                 template<typename P>
-                std::coroutine_handle<> await_suspend(std::coroutine_handle<P> h) const noexcept
+                std::coroutine_handle<> await_suspend(std::coroutine_handle<P> h) noexcept
                 {
                     h.promise().completed.emit();
-                    if (auto parent = h.promise().parent; parent)
+                    if (auto parent = h.promise().parent; parent) {
                         return parent;
-                    else
-                        return std::noop_coroutine();
+                    }
+                    return std::noop_coroutine();
                 }
             };
-            final_awaiter final_suspend() noexcept {
+            [[nodiscard]] final_awaiter final_suspend() const noexcept {
                 return {};
             }
 
@@ -128,7 +128,7 @@ namespace covent {
                 eptr = std::current_exception();
             }
 
-            void resolve() {
+            void resolve() const {
                 if (eptr) std::rethrow_exception(eptr);
             }
         };
@@ -139,7 +139,7 @@ namespace covent {
         template<typename T> concept move = !std::is_trivial_v<T> && std::is_move_constructible_v<T> && !std::is_pointer_v<T> && !std::is_reference_v<T> && !std::is_rvalue_reference_v<T>;
         template<typename T> concept trivial = std::is_trivial_v<T> && !std::is_pointer_v<T> && !std::is_reference_v<T> && !std::is_rvalue_reference_v<T>;
 
-        template<typename R, typename V=R::value_type> struct promise;
+        template<typename R, typename V=typename R::value_type> struct promise;
 
         template<typename R, reference V>
         struct promise<R,V> : promise_base<R> {
@@ -275,7 +275,7 @@ namespace covent {
                 return R{handle_type::from_promise(*this)};
             }
 
-            std::suspend_never return_void() {
+            std::suspend_never return_void() const {
                 return {};
             }
 
@@ -321,12 +321,12 @@ namespace covent {
 
         handle_type handle = nullptr;
 
-        bool start() const {
+        bool start() const { // NOLINT
             *handle.promise().liveness = true;
             handle.resume();
             return handle.done();
         }
-        bool done() const {
+        [[nodiscard]] bool done() const {
             return handle.done();
         }
         value_type get() const {
@@ -379,15 +379,14 @@ namespace covent {
                 std::weak_ptr<bool> liveness = coro.promise().liveness;
 
                 l->defer([coro, liveness](){
-                    auto alive = liveness.lock();
-                    if (alive) {
+                    if (auto alive = liveness.lock(); alive) {
                         coro.promise().restack();
                         coro.resume();
                     }
                 });
             }
 
-            auto await_ready() {
+            auto await_ready() const {
                 // We always return false here to force our mini coroutine to run.
                 // It'd be nice to avoid this,
                 return false;
@@ -456,18 +455,18 @@ namespace covent {
 
             template<typename A>
             requires A::no_loop_resume
-            auto const & await_transform(const A & a) {
+            auto const & await_transform(const A & a) const {
                 return a;
             }
 
             template<typename A>
-            auto await_transform(A & a) {
+            auto await_transform(A & a) const {
                 covent::temp<A &> aa;
                 aa.assign(a);
                 return await_transformer<A, wrapped_promise<R>>{std::move(aa)};
             }
             template<typename A>
-            auto await_transform(const A & a) {
+            auto await_transform(const A & a) const {
                 covent::temp<const A &> aa;
                 aa.assign(a);
                 return await_transformer<const A, wrapped_promise<R>>{std::move(aa)};
@@ -482,7 +481,7 @@ namespace covent {
         using handle_type = std::coroutine_handle<promise_type>;
 
         handle_type handle;
-        bool start() const {
+        bool start() const { // NOLINT
             if (!handle) throw std::logic_error("No such coroutine");
             if (handle.promise().same_loop()) {
                 *handle.promise().liveness = true;
@@ -492,8 +491,7 @@ namespace covent {
                 std::weak_ptr<bool> alive = handle.promise().liveness;
 
                 l->defer([handle= this->handle, alive](){
-                    auto liveness = alive.lock();
-                    if (liveness) {
+                    if (auto liveness = alive.lock(); liveness) {
                         *handle.promise().liveness = true;
                         handle.resume();
                     }
@@ -501,7 +499,7 @@ namespace covent {
             }
             return handle.done();
         }
-        bool done() const {
+        [[nodiscard]] bool done() const {
             if (!handle) throw std::logic_error("No such coroutine");
             return handle.done();
         }

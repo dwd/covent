@@ -6,21 +6,14 @@
 #define COVENT_CORE_H
 
 #include <event2/util.h>
-#include <set>
-#include <mutex>
 #include <optional>
 #include <functional>
-#include <coroutine>
-#include <map>
-#include <memory>
-#include <vector>
 #include <sys/socket.h>
 #include <covent/coroutine.h>
 #include <covent/base.h>
 #include <covent/sockaddr-cast.h>
 #include <sigslot/sigslot.h>
 #include <openssl/types.h>
-#include "future.h"
 
 struct bufferevent;
 struct evconnlistener;
@@ -30,7 +23,7 @@ namespace covent {
     public:
         ListenerBase(Loop & loop, std::string const & address, unsigned short port);
 
-        const struct sockaddr * sockaddr() const;
+        [[nodiscard]] const struct sockaddr * sockaddr() const;
         void session_connected(evutil_socket_t sock, const struct sockaddr * addr, int len);
         void listen(Loop &);
 
@@ -55,7 +48,7 @@ namespace covent {
         Session(Session const &) = delete;
         Session(Session &&) = delete;
 
-        virtual ~Session();
+        ~Session() override;
 
         using id_type = uint64_t;
 
@@ -70,7 +63,7 @@ namespace covent {
 
         void write(std::string_view data); // Fire and forget writing.
         [[nodiscard]] task<void> flush(std::string_view data = {}); // Awaitable writing.
-        SSL * ssl() const;
+        [[nodiscard]] SSL * ssl() const;
         sigslot::signal<> & ssl(SSL * s, bool connecting);
 
         task<void> connect(const struct sockaddr *, size_t);
@@ -83,11 +76,11 @@ namespace covent {
 
         bufferevent *eject();
 
-        id_type id() const {
+        [[nodiscard]] id_type id() const {
             return m_id;
         }
 
-        Loop & loop() const {
+        [[nodiscard]] Loop & loop() const {
             return m_loop;
         }
 

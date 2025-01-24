@@ -7,11 +7,9 @@
 
 #include <covent/base.h>
 #include <covent/core.h>
-#include <sys/socket.h>
 #include <vector>
 #include <memory>
 #include <map>
-#include <coroutine>
 #include <functional>
 #include <optional>
 #include <mutex>
@@ -34,16 +32,16 @@ namespace covent {
     template<typename Id>
     struct Compare {
         using is_transparent = void;
-        bool operator()(Id::id_type id, std::shared_ptr<Id> const & o2) const {
+        bool operator()(typename Id::id_type id, std::shared_ptr<Id> const & o2) const {
             return id < o2->id();
         }
-        bool operator()(std::shared_ptr<Id> const & o1, Id::id_type id) const {
+        bool operator()(std::shared_ptr<Id> const & o1, typename Id::id_type id) const {
             return o1->id() < id;
         }
         bool operator()(std::shared_ptr<Id> const & o1, std::shared_ptr<Id> const & o2) const {
             return o1->id() < o2->id();
         }
-        bool operator()(Id::id_type i1, Id::id_type i2) const {
+        bool operator()(typename Id::id_type i1, typename Id::id_type i2) const {
             return i1 < i2;
         }
     };

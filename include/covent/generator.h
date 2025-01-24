@@ -14,7 +14,7 @@ namespace covent {
     template<typename T>
     class generator {
     public:
-        using value_pointer = std::remove_reference<T>::type *;
+        using value_pointer = std::remove_reference_t<T> *;
         struct handle_type;
         struct promise_type {
             value_pointer value;
@@ -24,18 +24,18 @@ namespace covent {
                 return {};
             }
 
-            std::suspend_never initial_suspend() {
+            static std::suspend_never initial_suspend() {
                 return {};
             }
 
-            std::suspend_always final_suspend() noexcept {
+            static std::suspend_always final_suspend() noexcept {
                 return {}; // Change this to std::suspend_always
             }
 
-            void return_void() {}
+            static void return_void() {}
 
-            void unhandled_exception() {
-                std::terminate();
+            [[noreturn]] static void unhandled_exception() {
+                std::rethrow_exception(std::current_exception());
             }
 
             generator get_return_object() {
@@ -70,18 +70,18 @@ namespace covent {
             return m_handle;
         }
 
-        std::default_sentinel_t end() {
+        static std::default_sentinel_t end() {
             return std::default_sentinel;
         }
 
     private:
-        handle_type m_handle;
+        [[no_unique_address]] handle_type m_handle;
     };
 
     template<typename T>
     class generator_async {
     public:
-        using value_pointer = std::remove_reference<T>::type *;
+        using value_pointer = std::remove_reference_t<T> *;
         struct handle_type;
         struct promise_type {
             covent::future<T> value = {};
@@ -90,12 +90,15 @@ namespace covent {
             struct resumer {
                 std::coroutine_handle<> consumer;
 
-                bool await_ready() const noexcept {
+                static bool await_ready() noexcept {
                     return false;
                 }
-                void await_resume() const noexcept {}
-                void await_suspend(std::coroutine_handle<> h) noexcept {
-                    if (consumer) consumer.resume();
+                static void await_resume() noexcept {}
+                [[nodiscard]] std::coroutine_handle<> await_suspend(std::coroutine_handle<>) const noexcept {
+                    if (consumer) {
+                        return consumer;
+                    }
+                    return std::noop_coroutine();
                 }
             };
 
@@ -161,7 +164,7 @@ namespace covent {
         }
 
     private:
-        handle_type m_handle;
+        [[no_unique_address]] handle_type m_handle;
     };
 }
 

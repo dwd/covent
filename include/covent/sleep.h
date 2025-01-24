@@ -16,8 +16,8 @@ namespace covent {
 
         explicit sleep(Time t) : m_time(t) {}
 
-        bool await_ready() const { return false; }
-        void await_resume() const {}
+        static bool await_ready() { return false; }
+        static void await_resume() {}
         template<typename A, typename L>
         void await_suspend(std::coroutine_handle<detail::wrapped_promise<A,L>> p) const {
             std::weak_ptr<bool> liveness = p.promise().liveness;

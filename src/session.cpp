@@ -223,7 +223,9 @@ void covent::Session::close() {
         m_top = nullptr;
     }
     std::cerr << "Close real" << std::endl;
-    m_loop.remove(*this);
+    m_loop.defer([session = this, loop = &m_loop]() {
+        loop->remove(*session);
+    });
 }
 
 bufferevent * covent::Session::eject() {

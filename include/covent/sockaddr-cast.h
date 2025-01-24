@@ -17,23 +17,25 @@ namespace covent {
         struct constlike {
             using type = std::conditional_t<std::is_const_v<T>, const typename std::remove_const_t<Q>, Q>;
         };
+        template<typename T, typename Q>
+        using constlike_t = typename constlike<T, Q>::type;
 
         template<typename T, decltype(sockaddr::sa_family) AF>
         struct sockaddr_family {
             using base_type = sockaddr;
-            using type = constlike<T, base_type>::type;
+            using type = constlike_t<T, base_type>;
         };
 
         template<typename T>
         struct sockaddr_family<T, AF_INET> {
             using base_type = struct sockaddr_in;
-            using type = constlike<T, base_type>::type;
+            using type = constlike_t<T, base_type>;
         };
 
         template<typename T>
         struct sockaddr_family<T, AF_INET6> {
             using base_type = struct sockaddr_in6;
-            using type = constlike<T, base_type>::type;
+            using type = constlike_t<T, base_type>;
         };
 
         template<typename A, typename B, typename C, typename D, typename R>

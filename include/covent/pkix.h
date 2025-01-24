@@ -70,51 +70,52 @@ namespace covent::pkix {
         TLSContext(TLSContext const &) = delete;
         void operator = (TLSContext const &) = delete;
         TLSContext(bool enabled, bool validation, std::string const & domain);
+        ~TLSContext();
         SSL_CTX* context();
         SSL * instantiate(bool connecting, std::string const & remote_domain);
         bool enabled();
         void add_identity(std::unique_ptr<PKIXIdentity> && identity);
 
         void enabled(bool e);
-        bool validation() const {
+        [[nodiscard]] bool validation() const {
             return m_validation;
         }
         void validation(bool v) {
             m_validation = v;
         }
-        std::string domain() const {
+        [[nodiscard]] std::string const & domain() const {
             return m_domain;
         }
         void domain(std::string const & d) {
             m_domain = d;
         }
-        std::string dhparam() const {
+        [[nodiscard]] std::string const & dhparam() const {
             return m_dhparam;
         }
         void dhparam(std::string const & d) {
             m_dhparam = d;
         }
-        std::string cipherlist() const {
+        [[nodiscard]] std::string const & cipherlist() const {
             return m_cipherlist;
         }
         void cipherlist(std::string const & c) {
             m_cipherlist = c;
         }
-        int min_version() const {
+        [[nodiscard]] int min_version() const {
             return m_min_version;
         }
         void min_version(int m) {
             m_min_version = m;
         }
-        int max_version() const {
+        [[nodiscard]] int max_version() const {
             return m_max_version;
         }
-        std::string max_version_str() const;
+        [[nodiscard]] std::string const & max_version_str() const;
         void max_version(int m) {
             m_max_version = m;
         }
         void max_version(std::string const &);
-        auto const & identities() const {
+        [[nodiscard]] auto const & identities() const {
             return m_identities;
         }
 

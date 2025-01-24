@@ -22,8 +22,8 @@ struct evkeyvalq;
 struct event_base;
 struct bufferevent;
 
-namespace covent {
-    namespace http {
+
+    namespace covent::http {
         using Header = std::map<std::string, std::string, std::less<>>;
         enum class Method {
             GET, POST, PUT, DELETE
@@ -36,7 +36,7 @@ namespace covent {
             std::string netloc;
             std::string path;
 
-            URI(std::string_view text);
+            explicit URI(std::string_view text);
         private:
             void parse(std::string_view text);
         };
@@ -88,9 +88,9 @@ namespace covent {
         public:
             ConstFieldRef(Header & header, std::string const & field);
 
-            std::string_view const &field() const;
-            operator std::string_view() const;
-            operator bool() const;
+            [[nodiscard]] std::string_view const &field() const;
+            operator std::string_view() const; // NOLINT
+            operator bool() const; // NOLINT
             auto operator <=> (std::string_view const & o) const {
                 std::string_view me = (*this);
                 return me <=> o;
@@ -125,7 +125,7 @@ namespace covent {
 
             FieldRef operator [] (std::string const &);
             ConstFieldRef operator [] (std::string const &) const;
-            std::string_view body() const;
+            [[nodiscard]] std::string_view body() const;
         private:
             std::unique_ptr<Message> m_response;
         };
@@ -137,13 +137,13 @@ namespace covent {
             Request request(Method, URI const & uri, std::optional<std::string> body = {});
             Request request(Method, std::string_view uri, std::optional<std::string> body = {});
 
-            covent::task<std::unique_ptr<Response>> send(Request &);
+            covent::task<std::unique_ptr<Response>> send(Request const &);
 
         private:
             class HTTPSession;
-            covent::task<std::shared_ptr<HTTPSession>> connect(dns::answers::Address address, URI const & uri) const;
-            covent::task<std::shared_ptr<HTTPSession>> connect_v4(URI const & uri) const;
-            covent::task<std::shared_ptr<HTTPSession>> connect_v6(URI const & uri) const;
+            [[nodiscard]] covent::task<std::shared_ptr<HTTPSession>> connect(dns::answers::Address address, URI const & uri) const;
+            [[nodiscard]] covent::task<std::shared_ptr<HTTPSession>> connect_v4(URI const & uri) const;
+            [[nodiscard]] covent::task<std::shared_ptr<HTTPSession>> connect_v6(URI const & uri) const;
 
             Loop & m_loop;
             URI m_uri;
@@ -180,7 +180,7 @@ namespace covent {
         public:
             template<typename T>
             requires std::is_invocable_r_v<covent::task<void>, T, evhttp_request *>
-            Middleware(T && t) : m_handler(t) {};
+            explicit Middleware(T && t) : m_handler(t) {};
 
             virtual covent::task<void> handle(struct evhttp_request * req);
             virtual ~Middleware() = default;
@@ -189,7 +189,9 @@ namespace covent {
         };
         class Endpoint {
         public:
-            Endpoint(std::string path);
+            virtual ~Endpoint() = default;
+
+            explicit Endpoint(std::string path);
 
             template<typename T>
             requires std::is_invocable_r_v<covent::task<int>, T, evhttp_request *>
@@ -199,7 +201,7 @@ namespace covent {
             virtual covent::task<int> handler(struct evhttp_request * req);
             void add(std::unique_ptr<Endpoint> && child);
             void add(std::unique_ptr<Middleware> && child);
-            auto const & path() const {
+            [[nodiscard]] auto const & path() const {
                 return m_path;
             }
 
@@ -214,7 +216,7 @@ namespace covent {
             Server(short unsigned int port, covent::pkix::TLSContext & tls_context);
             ~Server();
 
-            Endpoint & root() const {
+            [[nodiscard]] Endpoint & root() const {
                 return *m_root;
             }
 
@@ -236,7 +238,7 @@ namespace covent {
             class http_status : public base {
             public:
                 http_status(int status, std::string const & what) : m_status(status), base(what) {}
-                auto status() {
+                [[nodiscard]] auto status() const {
                     return m_status;
                 }
 
@@ -255,6 +257,6 @@ namespace covent {
             };
         }
     }
-}
+
 
 #endif //COVENT_HTTP_H

@@ -11,8 +11,6 @@
 #include <event2/bufferevent_ssl.h>
 #include <fmt/format.h>
 
-#include "covent/sleep.h"
-
 using namespace covent::http;
 
 class Client::HTTPSession : public covent::Session {
@@ -44,7 +42,7 @@ Request Client::request(Method method, URI const & uri, std::optional<std::strin
 }
 
 Request Client::request(Method method, std::string_view uri, std::optional<std::string> body) {
-    return Request(*this, method, uri);
+    return Request(*this, method, URI(uri));
 }
 
 covent::task<std::shared_ptr<Client::HTTPSession>> Client::connect(covent::dns::answers::Address address, URI const & uri) const {
@@ -67,7 +65,9 @@ covent::task<std::shared_ptr<Client::HTTPSession>> Client::connect(covent::dns::
             }
             std::cerr << "Session ready" << std::endl;
             break;
-        } catch (std::runtime_error e) {}
+        } catch (std::runtime_error &) {
+            // Loop around and try again.
+        }
     }
     m_loop.add(session);
     co_return session;
@@ -81,13 +81,13 @@ covent::task<std::shared_ptr<Client::HTTPSession>> Client::connect_v6(URI const 
     co_return co_await connect(co_await m_resolver.address_v6(uri.host), uri);
 }
 
-covent::task<std::unique_ptr<Response>> Client::send(Request &r) {
+covent::task<std::unique_ptr<Response>> Client::send(Request const &r) {
     std::shared_ptr<Client::HTTPSession> session;
     std::list<task<std::shared_ptr<HTTPSession>>> attempts; attempts.emplace_back(connect_v6(r.uri()));
 
     try {
         session = co_await race<std::shared_ptr<HTTPSession>>(attempts, 0.1);
-    } catch (covent::race_timeout &) {
+    } catch (covent::race_timeout &) { // NOSONAR
         // Carry on!
     }
     if (!session) {
