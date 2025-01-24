@@ -140,6 +140,11 @@ namespace covent {
             covent::task<std::unique_ptr<Response>> send(Request &);
 
         private:
+            class HTTPSession;
+            covent::task<std::shared_ptr<HTTPSession>> connect(dns::answers::Address address, URI const & uri) const;
+            covent::task<std::shared_ptr<HTTPSession>> connect_v4(URI const & uri) const;
+            covent::task<std::shared_ptr<HTTPSession>> connect_v6(URI const & uri) const;
+
             Loop & m_loop;
             URI m_uri;
             std::unique_ptr<Session> m_session;

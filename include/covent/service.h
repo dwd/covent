@@ -10,6 +10,12 @@
 #include <spdlog/logger.h>
 
 namespace covent {
+    enum class Preference {
+        Yes,
+        DontCare,
+        No
+    };
+
     class ConnectInfo {
     public:
         enum class  Method {

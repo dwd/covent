@@ -38,6 +38,40 @@ namespace covent {
         }
     };
 
+    template<typename P>
+    struct own_handle {
+        static constexpr bool no_loop_resume = true;
+        mutable std::coroutine_handle<P> handle;
+        bool await_ready() const noexcept {
+            return false; // Say we'll suspend to get await_suspend called.
+        }
+        std::coroutine_handle<P> await_resume() const noexcept {
+            return handle;
+        }
+        bool await_suspend(std::coroutine_handle<P> h) const noexcept {
+            handle = h;
+            return false; // Never actually suspend.
+        }
+        auto & operator co_await() const {
+            return *this;
+        }
+    };
+
+    struct coroutine_switch {
+        static constexpr bool no_loop_resume = true;
+        std::coroutine_handle<> handle;
+        bool await_ready() const noexcept {
+            return false; // Say we'll suspend to get await_suspend called.
+        }
+        void await_resume() const noexcept {}
+        std::coroutine_handle<> await_suspend(std::coroutine_handle<> h) const noexcept {
+            return handle; // Always suspend, and switch to the other.
+        }
+        auto & operator co_await() const {
+            return *this;
+        }
+    };
+
     namespace detail {
         class Stack {
             int i = 0;
@@ -101,15 +135,16 @@ namespace covent {
         template<typename T> concept reference = std::is_reference_v<T>;
         template<typename T> concept refreference = std::is_rvalue_reference_v<T>;
         template<typename T> concept pointer = std::is_pointer_v<T>;
-        template<typename T> concept copy = std::is_copy_constructible_v<T> && !std::is_move_constructible_v<T> && !std::is_pointer_v<T> && !std::is_reference_v<T> && !std::is_rvalue_reference_v<T>;
-        template<typename T> concept move = std::is_move_constructible_v<T> && !std::is_pointer_v<T> && !std::is_reference_v<T> && !std::is_rvalue_reference_v<T>;
+        template<typename T> concept copy = !std::is_trivial_v<T> && std::is_copy_constructible_v<T> && !std::is_move_constructible_v<T> && !std::is_pointer_v<T> && !std::is_reference_v<T> && !std::is_rvalue_reference_v<T>;
+        template<typename T> concept move = !std::is_trivial_v<T> && std::is_move_constructible_v<T> && !std::is_pointer_v<T> && !std::is_reference_v<T> && !std::is_rvalue_reference_v<T>;
+        template<typename T> concept trivial = std::is_trivial_v<T> && !std::is_pointer_v<T> && !std::is_reference_v<T> && !std::is_rvalue_reference_v<T>;
 
         template<typename R, typename V=R::value_type> struct promise;
 
         template<typename R, reference V>
         struct promise<R,V> : promise_base<R> {
             using value_type = std::remove_reference_t<V>;
-            using handle_type = std::__n4861::coroutine_handle<promise<R, V>>;
+            using handle_type = std::coroutine_handle<promise<R, V>>;
             value_type * value;
 
             R get_return_object() {
@@ -130,7 +165,7 @@ namespace covent {
         template<typename R, pointer V>
         struct promise<R,V> : promise_base<R> {
             using value_type = std::remove_pointer_t<V>;
-            using handle_type = std::__n4861::coroutine_handle<promise<R, V>>;
+            using handle_type = std::coroutine_handle<promise<R, V>>;
             value_type * value;
 
             R get_return_object() {
@@ -151,7 +186,7 @@ namespace covent {
         template<typename R, refreference V>
         struct promise<R,V> : promise_base<R> {
             using value_type = std::remove_reference_t<V>;
-            using handle_type = std::__n4861::coroutine_handle<promise<R, V>>;
+            using handle_type = std::coroutine_handle<promise<R, V>>;
             std::optional<value_type> value;
 
             R get_return_object() {
@@ -172,7 +207,7 @@ namespace covent {
         template<typename R, move V>
         struct promise<R,V> : promise_base<R> {
             using value_type = V;
-            using handle_type = std::__n4861::coroutine_handle<promise<R, V>>;
+            using handle_type = std::coroutine_handle<promise<R, V>>;
             std::optional<value_type> value;
 
             R get_return_object() {
@@ -193,7 +228,7 @@ namespace covent {
         template<typename R, copy V>
         struct promise<R,V> : promise_base<R> {
             using value_type = V;
-            using handle_type = std::__n4861::coroutine_handle<promise<R, V>>;
+            using handle_type = std::coroutine_handle<promise<R, V>>;
             std::optional<value_type> value;
 
             R get_return_object() {
@@ -211,9 +246,30 @@ namespace covent {
             }
         };
 
+        template<typename R, trivial V>
+        struct promise<R,V> : promise_base<R> {
+            using value_type = V;
+            using handle_type = std::coroutine_handle<promise<R, V>>;
+            std::optional<value_type> value;
+
+            R get_return_object() {
+                return R{handle_type::from_promise(*this)};
+            }
+
+            std::suspend_never return_value(value_type v) {
+                value.emplace(v);
+                return {};
+            }
+
+            value_type get() {
+                this->resolve();
+                return value.value();
+            }
+        };
+
         template<typename R>
         struct promise<R, void> : promise_base<R> {
-            using handle_type = std::__n4861::coroutine_handle<promise<R, void>>;
+            using handle_type = std::coroutine_handle<promise<R, void>>;
 
             R get_return_object() {
                 return R{handle_type::from_promise(*this)};

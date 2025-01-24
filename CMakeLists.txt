@@ -52,6 +52,7 @@ set(COVENT_SOURCES
         src/http/client.cpp
         src/http/message.cpp
         src/http/uri.cpp
+        include/covent/generator.h
 )
 
 #add_library(covent SHARED ${COVENT_SOURCES})

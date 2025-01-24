@@ -37,6 +37,27 @@ namespace covent {
             if (await_ready()) {
                 return false;
             }
+            m_liveness = m_dummy;
+            m_coro = awaiting_coroutine;
+            return true;
+        }
+
+        template<typename A, typename B>
+        bool await_suspend(std::coroutine_handle<covent::detail::wrapped_promise<A, B>> awaiting_coroutine) const {
+            if (await_ready()) {
+                return false;
+            }
+            m_liveness = awaiting_coroutine.promise().liveness;
+            m_coro = awaiting_coroutine;
+            return true;
+        }
+
+        template<typename A, typename B>
+        bool await_suspend(std::coroutine_handle<covent::detail::promise<A, B>> awaiting_coroutine) const {
+            if (await_ready()) {
+                return false;
+            }
+            m_liveness = awaiting_coroutine.promise().liveness;
             m_coro = awaiting_coroutine;
             return true;
         }
@@ -57,11 +78,18 @@ namespace covent {
         }
     private:
         void gogogo() {
-            m_coro.resume();
+            if (m_coro) {
+                auto liveness = m_liveness.lock();
+                if (liveness) {
+                    m_coro.resume();
+                }
+            }
         }
         std::optional<V> m_value;
         std::exception_ptr m_except;
         mutable std::coroutine_handle<> m_coro = std::noop_coroutine();
+        mutable std::weak_ptr<bool> m_liveness;
+        std::shared_ptr<bool> m_dummy = std::make_shared<bool>(true);
     };
     template<>
     class future<void> : public future<bool> {

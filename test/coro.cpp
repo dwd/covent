@@ -5,6 +5,8 @@
 #include <covent/loop.h>
 #include <covent/gather.h>
 #include <covent/sleep.h>
+
+#include "covent/generator.h"
 #include "gtest/gtest.h"
 
 namespace run_single {
@@ -272,4 +274,49 @@ TEST(CoroReturn, movable) {
 TEST(CoroReturn, copy) {
     covent::Loop loop;
     EXPECT_EQ(loop.run_task(std_string("42")), "42");
+}
+
+namespace {
+    covent::generator<int> counter() {
+        for (int i = 0; i != 10; ++i) {
+            co_yield i;
+        }
+    }
+
+    covent::generator_async<int> counter_async() {
+        for (int i = 0; i != 10; ++i) {
+            std::cout << "1 Counter is " << i << std::endl;
+            co_await covent::sleep(0.1);
+            std::cout << "2 Counter is " << i << std::endl;
+            co_yield i;
+            std::cout << "3 Counter is " << i << std::endl;
+        }
+    }
+
+    covent::task<int> counter_check() {
+        int i = 0;
+        auto gen = counter_async();
+        for (auto j = co_await gen.begin(); j != gen.end(); co_await ++j) {
+            std::cout << "X Counter is " << *j << std::endl;
+            co_await covent::sleep(0.1);
+            i += *j;
+        }
+        co_return i;
+    }
+}
+
+TEST(Generator, simple) {
+    int j = 0;
+    for (auto i : counter()) {
+        EXPECT_EQ(i, j);
+        EXPECT_NE(i, 10);
+        ++j;
+    }
+    EXPECT_EQ(j, 10);
+}
+
+TEST(Generator, async) {
+    covent::Loop loop;
+    auto r = loop.run_task(counter_check());
+    EXPECT_EQ(r, 45);
 }

@@ -38,10 +38,12 @@ namespace covent {
                 }
             }, m_time);
         }
-//        void await_suspend(std::coroutine_handle<> p) const {
-//            // Also here?
-//            covent::Loop::thread_loop().defer([p]() { p.resume(); }, m_time);
-//        }
+        void await_suspend(std::coroutine_handle<> p) const {
+            // Also here?
+            covent::Loop::thread_loop().defer([p]() {
+                p.resume();
+            }, m_time);
+        }
         auto & operator co_await () const {
             return *this;
         }

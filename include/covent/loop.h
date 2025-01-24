@@ -97,6 +97,9 @@ namespace covent {
 
         void defer(std::function<void()> && fn);
         void defer(std::function<void()> && fn, long seconds);
+        void defer(std::function<void()> && fn, int seconds) {
+            defer(std::move(fn), static_cast<long>(seconds));
+        }
         void defer(std::function<void()> && fn, double seconds);
         void defer(std::function<void()> && fn, struct timeval seconds);
 

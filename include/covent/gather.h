@@ -9,6 +9,8 @@
 
 #include <covent/coroutine.h>
 
+#include "sleep.h"
+
 namespace covent {
     // Usage:
     // auto [ ... ] = co_await gather(task(), task2(), ...);
@@ -20,16 +22,35 @@ namespace covent {
 
     namespace detail {
         covent::task<void> dummy();
+        template<typename T>
+        covent::task<void> timeout(T t) {
+            co_await covent::sleep(t);
+        }
+        struct forever {};
     }
+    class race_timeout : public std::runtime_error {
+    public:
+        using std::runtime_error::runtime_error;
+    };
+    template <typename Container, typename T>
+    concept container_of = requires(Container c) {
+        typename Container::value_type;
+        requires std::same_as<typename Container::value_type, T>;
+        { c.begin() } -> std::input_iterator;
+        { c.end() } -> std::input_iterator;
+    };
 
     // Usage:
     // R foo = race({task(), task2(), ...});
-    template<typename R>
-    covent::task<R> race(std::initializer_list<covent::task<R>> tasks) {
+    template<typename R, container_of<covent::task<R>> C, typename T=detail::forever>
+    covent::task<R> race(C const & tasks, T timeout={}, bool start=true) {
         // Kick off by starting each task. If any finishes instantly, just return the result.
-        for (auto & task : tasks) {
-            if (task.start()) {
-                co_return task.get();
+        covent::task<void> timer;
+        if (start) {
+            for (auto & task : tasks) {
+                if (task.start()) {
+                    co_return task.get();
+                }
             }
         }
         // We now have a bunch of tasks which are suspended, so we only want to await the first.
@@ -40,6 +61,10 @@ namespace covent {
         for (auto & task : tasks) {
             task.handle.promise().parent = dummy_task.handle;
         }
+        if constexpr (!std::is_same_v<T, detail::forever>) {
+            timer = detail::timeout(timeout);
+            timer.handle.promise().parent = dummy_task.handle;
+        }
         // Now co_wait the dummy, making us the (grand)parent of the tasks:
         co_await dummy_task;
         // So, one of the tasks has finished - look through and find it, and return the result.
@@ -48,7 +73,11 @@ namespace covent {
                 co_return task.get();
             }
         }
-        throw std::logic_error("Race was not won by anyone?");
+        throw race_timeout("Race timeout");
+    }
+    template<typename R>
+    covent::task<R> race(std::initializer_list<covent::task<R>> const & tasks) {
+        return race<R>(tasks, detail::forever{}, true);
     }
 }
 
