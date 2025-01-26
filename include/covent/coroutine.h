@@ -442,7 +442,8 @@ namespace covent {
             L * loop;
 
             wrapped_promise() : loop(&L::thread_loop()) {}
-            explicit wrapped_promise(L & l) : loop(&l) {}
+            template<typename ...Args>
+            wrapped_promise(L & l, Args & ...other_args) : loop(&l) {}
 
             bool same_loop() {
                 return loop == &L::thread_loop();
