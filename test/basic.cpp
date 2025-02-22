@@ -77,6 +77,6 @@ TEST(Thread, simple) {
     auto & thread_loop = run_on_thread();
     auto task1 = loop.run_task(return_thread_id(loop));
     auto task2 = loop.run_task(that_too(return_thread_id(thread_loop)));
-    // EXPECT_NE(std::hash<std::thread::id>{}(task1), std::hash<std::thread::id>{}(task2));
+    EXPECT_NE(std::hash<std::thread::id>{}(task1), std::hash<std::thread::id>{}(task2));
     // Above fails because the coroutine is resumed by the awaiter instead of start(), so it flips loop (possibly) only after a resume.
 }

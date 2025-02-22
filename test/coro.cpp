@@ -193,36 +193,36 @@ namespace {
 
 TEST(CoroRace, race_instant_single) {
     covent::Loop loop;
-    auto ret= loop.run_task(covent::race({
+    auto ret= loop.run_task(covent::race(
         winner()
-    }));
+    ));
     EXPECT_EQ(ret, 1);
 }
 
 TEST(CoroRace, race_sleep_single) {
     covent::Loop loop;
-    auto ret= loop.run_task(covent::race({
+    auto ret= loop.run_task(covent::race(
         tortoise()
-    }));
+    ));
     EXPECT_EQ(ret, 3);
 }
 
 TEST(CoroRace, race_all) {
     covent::Loop loop;
-    auto ret= loop.run_task(covent::race({
+    auto ret= loop.run_task(covent::race(
         winner(),
         hare(),
         tortoise()
-    }));
+    ));
     EXPECT_EQ(ret, 1);
 }
 
 TEST(CoroRace, race_classic) {
     covent::Loop loop;
-    auto ret= loop.run_task(covent::race({
+    auto ret= loop.run_task(covent::race(
         hare(),
         tortoise()
-    }));
+    ));
     EXPECT_EQ(ret, 3);
 }
 

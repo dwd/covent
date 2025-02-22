@@ -307,8 +307,7 @@ namespace covent {
                     // Already started, but presumably suspended, so do nothing.
                     return std::noop_coroutine();
                 }
-                *task.handle.promise().liveness = true;
-                return task.handle;
+                return task.resume_handle();
             }
         };
     }
@@ -354,6 +353,11 @@ namespace covent {
 
         auto operator co_await() const {
             return detail::task_awaiter(*this);
+        }
+
+        handle_type resume_handle() const {
+            *handle.promise().liveness = true;
+            return handle;
         }
     };
 
@@ -499,6 +503,24 @@ namespace covent {
                 });
             }
             return handle.done();
+        }
+
+        std::coroutine_handle<> resume_handle() const {
+            if (handle.promise().same_loop()) {
+                *handle.promise().liveness = true;
+                return handle;
+            } else {
+                auto * l = handle.promise().loop;
+                std::weak_ptr<bool> alive = handle.promise().liveness;
+
+                l->defer([handle= this->handle, alive](){
+                    if (auto liveness = alive.lock(); liveness) {
+                        *handle.promise().liveness = true;
+                        handle.resume();
+                    }
+                });
+                return std::noop_coroutine();
+            }
         }
         [[nodiscard]] bool done() const {
             if (!handle) throw std::logic_error("No such coroutine");

@@ -50,6 +50,7 @@ covent::task<void> covent::Session::connect(const struct sockaddr * addr, size_t
     bufferevent_setcb(m_top, bev_read_cb, bev_write_cb, bev_event_cb, this);
     if (0 > bufferevent_socket_connect(m_top, addr, static_cast<int>(addrlen))) {
         m_top = nullptr;
+        std::cerr << "Connect: " << std::strerror(errno) << std::endl;
         throw covent_runtime_error(std::strerror(errno));
     }
     bufferevent_enable(m_top, EV_READ | EV_WRITE);

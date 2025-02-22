@@ -50,7 +50,9 @@ covent::task<std::shared_ptr<Client::HTTPSession>> Client::connect(covent::dns::
     if (uri.scheme == "https") {
         ssl = true;
     }
+    bool success = false;
     auto session = std::make_shared<HTTPSession>(m_loop); // Don't add it to the loop yet!
+    std::cerr << "Connect loop start" << std::endl;
     for (auto & s : address.addr) {
         try {
             covent::sockaddr_cast<AF_INET6>(&s)->sin6_port = htons(uri.port.value());
@@ -64,16 +66,22 @@ covent::task<std::shared_ptr<Client::HTTPSession>> Client::connect(covent::dns::
                 std::cerr << "SSL validation" << std::endl;
             }
             std::cerr << "Session ready" << std::endl;
+            success = true;
             break;
         } catch (std::runtime_error &) {
             // Loop around and try again.
         }
     }
-    m_loop.add(session);
+    if (!success) {
+        session.reset();
+    } else {
+        m_loop.add(session);
+    }
     co_return session;
 }
 
 covent::task<std::shared_ptr<Client::HTTPSession>> Client::connect_v4(URI const & uri) const {
+    std::cerr << "Here -- v4" << std::endl;
     co_return co_await connect(co_await m_resolver.address_v4(uri.host), uri);
 }
 
@@ -86,14 +94,19 @@ covent::task<std::unique_ptr<Response>> Client::send(Request const &r) {
     std::list<task<std::shared_ptr<HTTPSession>>> attempts; attempts.emplace_back(connect_v6(r.uri()));
 
     try {
-        session = co_await race<std::shared_ptr<HTTPSession>>(attempts, 0.1);
+        session = co_await race(attempts, 0.1);
     } catch (covent::race_timeout &) { // NOSONAR
         // Carry on!
     }
     if (!session) {
+        if (attempts.rbegin()->done()) {
+            attempts.clear();
+        }
         attempts.emplace_back(connect_v4(r.uri()));
-        attempts.rbegin()->start();
-        session = co_await race<std::shared_ptr<HTTPSession>>(attempts, 5, false);
+        session = co_await race(attempts, 5);
+    }
+    if (!session) {
+        throw std::runtime_error("Connection failed");
     }
     session->message = std::make_unique<Message>();
     r.send(*session);

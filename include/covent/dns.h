@@ -101,6 +101,7 @@ namespace covent::dns {
             unsigned short port = 0;
             unsigned short weight = 0;
             unsigned short priority = 0;
+            bool tls = false;
 
             static SRV parse(std::string const &);
         };

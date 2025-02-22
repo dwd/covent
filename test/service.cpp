@@ -49,3 +49,55 @@ GTEST_TEST(SService, gather) {
     EXPECT_EQ(foo.gathered_tlsa.size(), 0);
     EXPECT_EQ(foo.gathered_connect.size(), 4); // StartTLS and DirectTLS for both v4 and v6.
 }
+
+#include <covent/gather.h>
+#include <covent/generator.h>
+#include <random>
+#include <ranges>
+#include <algorithm>
+
+namespace {
+    covent::generator_async<covent::dns::rr::SRV> srv_lookup(std::string const & domain, std::vector<std::string> const & services) {
+        auto & resolver = covent::Loop::thread_loop().default_resolver();
+        auto srv_list = co_await covent::gather(
+                services | std::ranges::views::transform([&domain, &resolver](auto const & arg) {
+                    return resolver.srv(arg, domain);
+                })
+        );
+        auto it = srv_list.begin();
+        auto srv_def = *it++;
+        auto srv_tls = *it;
+        for (auto & rr : srv_tls.rrs) {
+            rr.tls = true;
+            srv_def.rrs.push_back(rr);
+        }
+        std::sort(srv_def.rrs.begin(), srv_def.rrs.end(), [](auto const & lhs, auto const & rhs) {
+           return lhs.priority < rhs.priority;
+        });
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        while (srv_def.rrs.size() > 0) {
+            auto prio = srv_def.rrs[0].priority;
+            int weight_total = 0;
+            for (auto const & rr : srv_def.rrs) {
+                if (prio != rr.priority) break;
+                weight_total += rr.weight;
+            }
+            if (weight_total == 0) {
+                auto rr = srv_def.rrs[0];
+                srv_def.rrs.erase(srv_def.rrs.begin());
+                co_yield rr;
+            }
+            std::uniform_int_distribution<> distrib(0, weight_total);
+            auto weight_sel = distrib(gen);
+            for (auto i = srv_def.rrs.begin(); i != srv_def.rrs.end(); ++i) {
+                weight_sel -= i->weight;
+                if (weight_sel <= 0) {
+                    auto rr = *i;
+                    srv_def.rrs.erase(i);
+                    co_yield rr;
+                }
+            }
+        }
+    }
+}
