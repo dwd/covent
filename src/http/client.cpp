@@ -4,6 +4,7 @@
 
 
 #include <iostream>
+#include <covent/app.h>
 #include <covent/http.h>
 #include <covent/loop.h>
 #include <covent/core.h>
@@ -21,6 +22,10 @@ public:
     covent::future<bool> ready;
 
     covent::task<unsigned long> process(std::string_view data) override {
+        if (!message) {
+            std::cout << "Data arrived before I was ready?" << std::endl;
+            co_return 0;
+        }
         auto tmp = message->process(data);
         if (message->complete) {
             ready.resolve(true);

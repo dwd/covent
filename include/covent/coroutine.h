@@ -136,7 +136,8 @@ namespace covent {
         template<typename T> concept refreference = std::is_rvalue_reference_v<T>;
         template<typename T> concept pointer = std::is_pointer_v<T>;
         template<typename T> concept copy = !std::is_trivial_v<T> && std::is_copy_constructible_v<T> && !std::is_move_constructible_v<T> && !std::is_pointer_v<T> && !std::is_reference_v<T> && !std::is_rvalue_reference_v<T>;
-        template<typename T> concept move = !std::is_trivial_v<T> && std::is_move_constructible_v<T> && !std::is_pointer_v<T> && !std::is_reference_v<T> && !std::is_rvalue_reference_v<T>;
+        template<typename T> concept move = !std::is_trivial_v<T> && !std::is_copy_constructible_v<T> && std::is_move_constructible_v<T> && !std::is_pointer_v<T> && !std::is_reference_v<T> && !std::is_rvalue_reference_v<T>;
+        template<typename T> concept copymove = !std::is_trivial_v<T> && std::is_copy_constructible_v<T> && std::is_move_constructible_v<T> && !std::is_pointer_v<T> && !std::is_reference_v<T> && !std::is_rvalue_reference_v<T>;
         template<typename T> concept trivial = std::is_trivial_v<T> && !std::is_pointer_v<T> && !std::is_reference_v<T> && !std::is_rvalue_reference_v<T>;
 
         template<typename R, typename V=typename R::value_type> struct promise;
@@ -225,6 +226,32 @@ namespace covent {
             }
         };
 
+        template<typename R, copymove V>
+        struct promise<R,V> : promise_base<R> {
+            using value_type = V;
+            using handle_type = std::coroutine_handle<promise<R, V>>;
+            std::optional<value_type> value;
+
+            R get_return_object() {
+                return R{handle_type::from_promise(*this)};
+            }
+
+            std::suspend_never return_value(value_type && v) {
+                value.emplace(std::move(v));
+                return {};
+            }
+
+            std::suspend_never return_value(value_type const & v) {
+                value.emplace(v);
+                return {};
+            }
+
+            value_type get() {
+                this->resolve();
+                return std::move(value.value());
+            }
+        };
+
         template<typename R, copy V>
         struct promise<R,V> : promise_base<R> {
             using value_type = V;
@@ -299,6 +326,10 @@ namespace covent {
             std::coroutine_handle<> await_suspend(std::coroutine_handle<> coro) {
                 // coro is the currently executing coroutine on this thread.
                 // We're going to start our new one, but first we'll let it know who its parent is and let it set up its execution context:
+                if (task.handle.promise().parent) {
+                    // Already another task awaiting this one, ooops.
+                    throw covent::covent_logic_error("Double await on a task");
+                }
                 task.handle.promise().parent = coro;
                 if (task.handle.done()) {
                     return coro;
