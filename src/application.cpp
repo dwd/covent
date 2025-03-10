@@ -3,6 +3,9 @@
 //
 
 #include "covent/app.h"
+#include <covent/coroutine.h>
+#include <spdlog/sinks/sink.h>
+#include <sentry.h>
 
 using namespace covent;
 

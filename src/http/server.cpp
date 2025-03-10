@@ -61,8 +61,13 @@ covent::task<int> Endpoint::handler(evhttp_request * req) {
 	return m_handler(req);
 }
 
-Server::Server(unsigned short port, covent::pkix::TLSContext &tls_context) : m_tls_context(tls_context) {
+Server::Server(unsigned short port, bool tls) {
 	auto & loop = covent::Loop::thread_loop();
+	m_service = std::make_unique<Service>();
+	if (!tls) {
+		auto & entry = m_service->add("");
+		entry.make_tls_context(false, false, "");
+	}
     m_server = evhttp_new(loop.event_base());
     evhttp_bind_socket(m_server, "::1", port);
     evhttp_set_bevcb(m_server, bufferevent_cb, this);
@@ -80,8 +85,9 @@ void Server::add(std::unique_ptr<Endpoint> && endpoint) {
 }
 
 struct bufferevent *Server::get_buffer_event(struct event_base * base) {
-	if (m_tls_context.enabled()) {
-		return bufferevent_openssl_socket_new(base, -1, m_tls_context.instantiate(false, "http"), BUFFEREVENT_SSL_ACCEPTING,
+	auto & tls_context = m_service->entry("").tls_context();
+	if (tls_context.enabled()) {
+		return bufferevent_openssl_socket_new(base, -1, tls_context.instantiate(false, "http"), BUFFEREVENT_SSL_ACCEPTING,
 											  BEV_OPT_CLOSE_ON_FREE | BEV_OPT_DEFER_CALLBACKS);
 	} else {
 		return bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE | BEV_OPT_DEFER_CALLBACKS);

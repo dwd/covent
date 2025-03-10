@@ -169,29 +169,118 @@ EjhZjvPJOKqTisDI6g9A9ak87cfIh26eYj+vm5JOnjYltmaZ6U83AgEC
                 return nullptr;
         }
     }
+
+//    int ssl_servername_cb(SSL *ssl, int *, void *) {
+//        const char *servername = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
+//        if (!servername) return SSL_TLSEXT_ERR_OK;
+//        SSL_CTX const * const old_ctx = SSL_get_SSL_CTX(ssl);
+//        SSL_CTX  * new_ctx = nullptr;
+//        std::string domain_name = servername; // Jid(servername).domain();
+//        if (auto const & domain = Config::config().domain(domain_name); domain.tls_enabled()) {
+//            auto &tls_context = domain.tls_context();
+//            new_ctx = tls_context.context();
+//        }
+//        if (!new_ctx) {
+//            auto const & any_domain = Config::config().domain("");
+//            if (any_domain.tls_enabled()) {
+//                new_ctx = any_domain.tls_context().context();
+//            }
+//        }
+//        if (new_ctx != old_ctx) SSL_set_SSL_CTX(ssl, new_ctx);
+//        return SSL_TLSEXT_ERR_OK;
+//    }
+
+    int verify_callback_cb(int preverify_ok, X509_STORE_CTX *st) {
+        if (!preverify_ok) {
+            const int name_sz = 256;
+            std::string cert_name;
+            cert_name.resize(name_sz);
+            X509_NAME_oneline(X509_get_subject_name(X509_STORE_CTX_get_current_cert(st)),
+                              cert_name.data(), name_sz);
+            cert_name.resize(cert_name.find('\0'));
+//            Config::config().logger().info("Cert failed basic verification: {}", cert_name);
+//            Config::config().logger().info("Error is {}", X509_verify_cert_error_string(X509_STORE_CTX_get_error(st)));
+        } else {
+            const int name_sz = 256;
+            std::string cert_name;
+            cert_name.resize(name_sz);
+            X509_NAME_oneline(X509_get_subject_name(X509_STORE_CTX_get_current_cert(st)),
+                              cert_name.data(), name_sz);
+            cert_name.resize(cert_name.find('\0'));
+//            Config::config().logger().debug("Cert passed basic verification: {}", cert_name);
+//            if (Config::config().fetch_pkix_status()) {
+//                auto cert = X509_STORE_CTX_get_current_cert(st);
+//                std::unique_ptr<STACK_OF(DIST_POINT), std::function<void(STACK_OF(DIST_POINT) *)>> crldp_ptr{
+//                        (STACK_OF(DIST_POINT) *) X509_get_ext_d2i(cert, NID_crl_distribution_points, nullptr, nullptr),
+//                        [](STACK_OF(DIST_POINT) *crldp) { sk_DIST_POINT_pop_free(crldp, DIST_POINT_free); }};
+//                auto crldp = crldp_ptr.get();
+//                if (crldp) {
+//                    for (int i = 0; i != sk_DIST_POINT_num(crldp); ++i) {
+//                        auto const *const dp = sk_DIST_POINT_value(crldp, i);
+//                        if (dp->distpoint->type == 0) { // Full Name
+//                            auto names = dp->distpoint->name.fullname;
+//                            for (int ii = 0; ii != sk_GENERAL_NAME_num(names); ++ii) {
+//                                auto const *const name = sk_GENERAL_NAME_value(names, ii);
+//                                if (name->type == GEN_URI) {
+//                                    ASN1_IA5STRING *uri = name->d.uniformResourceIdentifier;
+//                                    std::string uristr{reinterpret_cast<char *>(uri->data),
+//                                                       static_cast<std::size_t>(uri->length)};
+//                                    Config::config().logger().info("Prefetching CRL for {} - {}", cert_name, uristr);
+//                                    auto coro = CrlCache::crl(uristr);
+//                                    coro.start(); // But then we'd destroy it instantly, so maybe not?
+//                                }
+//                            }
+//                        }
+//                    }
+//                }
+//            }
+        }
+        return 1;
+    }
+    int reverify_callback(int preverify_ok, X509_STORE_CTX *st) {
+        std::array<char, 256> buffer{};
+        std::string cert_name{"<no cert name>"};
+        if (auto cert = X509_STORE_CTX_get_current_cert(st)) {
+            X509_NAME_oneline(X509_get_subject_name(cert), buffer.data(), buffer.size());
+            cert_name = buffer.data();
+        }
+        auto depth = X509_STORE_CTX_get_error_depth(st);
+        //        if (preverify_ok) {
+        //            Config::config().logger().info("Cert {} passed reverification: {}", depth, cert_name);
+        //        } else {
+        //            Config::config().logger().info("Cert {} failed reverification: {}", depth, cert_name);
+        //            Config::config().logger().info("Error is {}", X509_verify_cert_error_string(X509_STORE_CTX_get_error(st)));
+        //        }
+        return preverify_ok;
+    }
+
 }
 
 PKIXIdentity::PKIXIdentity(std::string const & cert_chain, std::string const & pkey) : m_cert_chain_file(cert_chain), m_pkey_file(pkey) {
 }
 
-PKIXValidator::PKIXValidator() : m_enabled(false), m_crls(false), m_system_trust(false) {
-}
-PKIXValidator::PKIXValidator(bool crls, bool use_system_trust) : m_enabled(true), m_crls(crls), m_system_trust(use_system_trust) {
-}
-
-TLSContext::TLSContext(bool enabled, bool validation, std::string const & domain) : m_enabled(enabled), m_validation(validation), m_domain(domain) {
-    if (m_enabled) {
-        m_dhparam = "auto";
-        m_cipherlist = "HIGH:!3DES:!eNULL:!aNULL:@STRENGTH"; // Apparently 3DES qualifies for HIGH, but is 112 bits, which the IM Observatory marks down for.
-        m_min_version = TLS1_2_VERSION;
-        m_max_version = TLS1_3_VERSION;
+void PKIXIdentity::apply(SSL_CTX * ssl_ctx) const {
+    if (SSL_CTX_use_certificate_chain_file(ssl_ctx, m_cert_chain_file.c_str()) != 1) {
+        for (unsigned long e = ERR_get_error(); e != 0; e = ERR_get_error()) {
+            //            Config::config().logger().error("OpenSSL Error (chain): {}", ERR_reason_error_string(e));
+        }
+        throw pkix_identity_load_error("Couldn't load chain file: " + m_cert_chain_file);
+    }
+    if (SSL_CTX_use_PrivateKey_file(ssl_ctx, m_pkey_file.c_str(), SSL_FILETYPE_PEM) != 1) {
+        for (unsigned long e = ERR_get_error(); e != 0; e = ERR_get_error()) {
+            //            Config::config().logger().error("OpenSSL Error (pkey): {}", ERR_reason_error_string(e));
+        }
+        throw pkix_identity_load_error("Couldn't load keyfile: " + m_pkey_file);
+    }
+    if (SSL_CTX_check_private_key(ssl_ctx) != 1) {
+        for (unsigned long e = ERR_get_error(); e != 0; e = ERR_get_error()) {
+            //            Config::config().logger().error("OpenSSL Error (check): {}", ERR_reason_error_string(e));
+        }
+        throw pkix_config_error("Private key mismatch");
     }
 }
 
-TLSContext::~TLSContext() {
-    if (m_ssl_ctx) {
-        SSL_CTX_free(m_ssl_ctx);
-    }
+PKIXValidator::PKIXValidator(Service & service, bool crls, bool use_system_trust) : m_service(service), m_enabled(true), m_crls(crls), m_system_trust(use_system_trust) {
 }
 
 
@@ -249,26 +338,6 @@ covent::task<void> PKIXValidator::fetch_crls(const SSL *ssl, X509 *cert) {
     }
     co_return;
 }
-
-namespace {
-    int reverify_callback(int preverify_ok, X509_STORE_CTX *st) {
-        std::array<char, 256> buffer{};
-        std::string cert_name{"<no cert name>"};
-        if (auto cert = X509_STORE_CTX_get_current_cert(st)) {
-            X509_NAME_oneline(X509_get_subject_name(cert), buffer.data(), buffer.size());
-            cert_name = buffer.data();
-        }
-        auto depth = X509_STORE_CTX_get_error_depth(st);
-//        if (preverify_ok) {
-//            Config::config().logger().info("Cert {} passed reverification: {}", depth, cert_name);
-//        } else {
-//            Config::config().logger().info("Cert {} failed reverification: {}", depth, cert_name);
-//            Config::config().logger().info("Error is {}", X509_verify_cert_error_string(X509_STORE_CTX_get_error(st)));
-//        }
-        return preverify_ok;
-    }
-}
-
 /**
  * This is a fairly massive coroutine, but I've kept it this way because it's
  * difficult to break apart. Indeed, I pulled it together out of two major callback
@@ -349,6 +418,39 @@ covent::task<bool> PKIXValidator::verify_tls(SSL * ssl, std::string remote_domai
     co_return valid;
 }
 
+void PKIXValidator::add_trust_anchor(std::string const & filename){
+    std::ifstream in(filename);
+    std::string value;
+    value.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    if (value.starts_with("-----BEGIN")) {
+        std::unique_ptr<BIO,decltype(&BIO_free)> bio{BIO_new_mem_buf(value.data(), static_cast<int>(value.size())), &BIO_free};
+        auto cert = PEM_read_bio_X509(bio.get(), nullptr, nullptr, nullptr);
+        if (!cert) throw pkix_config_error("Invalid PEM certificate");
+        m_trust_blobs.push_back(cert);
+    } else {
+        const unsigned char * ptr = reinterpret_cast<unsigned char *>(value.data());
+        auto * cert = d2i_X509(nullptr, &ptr, value.size());
+        if (!cert) throw pkix_config_error("Invalid DER certificate");
+        m_trust_blobs.push_back(cert);
+    }
+}
+
+TLSContext::TLSContext(Service & service, bool enabled, bool validation, std::string const & domain) : m_service(service), m_enabled(enabled), m_validation(validation), m_domain(domain) {
+    if (m_enabled) {
+        m_dhparam = "auto";
+        m_cipherlist = "HIGH:!3DES:!eNULL:!aNULL:@STRENGTH"; // Apparently 3DES qualifies for HIGH, but is 112 bits, which the IM Observatory marks down for.
+        m_min_version = TLS1_2_VERSION;
+        m_max_version = TLS1_3_VERSION;
+    }
+}
+
+TLSContext::~TLSContext() {
+    if (m_ssl_ctx) {
+        SSL_CTX_free(m_ssl_ctx);
+    }
+}
+
+
 SSL * TLSContext::instantiate(bool connecting, std::string const & domain) {
     if (!m_enabled) return nullptr;
     SSL_CTX *ctx = context();
@@ -391,76 +493,6 @@ SSL * TLSContext::instantiate(bool connecting, std::string const & domain) {
 }
 
 
-namespace {
-//    int ssl_servername_cb(SSL *ssl, int *, void *) {
-//        const char *servername = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
-//        if (!servername) return SSL_TLSEXT_ERR_OK;
-//        SSL_CTX const * const old_ctx = SSL_get_SSL_CTX(ssl);
-//        SSL_CTX  * new_ctx = nullptr;
-//        std::string domain_name = servername; // Jid(servername).domain();
-//        if (auto const & domain = Config::config().domain(domain_name); domain.tls_enabled()) {
-//            auto &tls_context = domain.tls_context();
-//            new_ctx = tls_context.context();
-//        }
-//        if (!new_ctx) {
-//            auto const & any_domain = Config::config().domain("");
-//            if (any_domain.tls_enabled()) {
-//                new_ctx = any_domain.tls_context().context();
-//            }
-//        }
-//        if (new_ctx != old_ctx) SSL_set_SSL_CTX(ssl, new_ctx);
-//        return SSL_TLSEXT_ERR_OK;
-//    }
-
-    int verify_callback_cb(int preverify_ok, X509_STORE_CTX *st) {
-        if (!preverify_ok) {
-            const int name_sz = 256;
-            std::string cert_name;
-            cert_name.resize(name_sz);
-            X509_NAME_oneline(X509_get_subject_name(X509_STORE_CTX_get_current_cert(st)),
-                              cert_name.data(), name_sz);
-            cert_name.resize(cert_name.find('\0'));
-//            Config::config().logger().info("Cert failed basic verification: {}", cert_name);
-//            Config::config().logger().info("Error is {}", X509_verify_cert_error_string(X509_STORE_CTX_get_error(st)));
-        } else {
-            const int name_sz = 256;
-            std::string cert_name;
-            cert_name.resize(name_sz);
-            X509_NAME_oneline(X509_get_subject_name(X509_STORE_CTX_get_current_cert(st)),
-                              cert_name.data(), name_sz);
-            cert_name.resize(cert_name.find('\0'));
-//            Config::config().logger().debug("Cert passed basic verification: {}", cert_name);
-//            if (Config::config().fetch_pkix_status()) {
-//                auto cert = X509_STORE_CTX_get_current_cert(st);
-//                std::unique_ptr<STACK_OF(DIST_POINT), std::function<void(STACK_OF(DIST_POINT) *)>> crldp_ptr{
-//                        (STACK_OF(DIST_POINT) *) X509_get_ext_d2i(cert, NID_crl_distribution_points, nullptr, nullptr),
-//                        [](STACK_OF(DIST_POINT) *crldp) { sk_DIST_POINT_pop_free(crldp, DIST_POINT_free); }};
-//                auto crldp = crldp_ptr.get();
-//                if (crldp) {
-//                    for (int i = 0; i != sk_DIST_POINT_num(crldp); ++i) {
-//                        auto const *const dp = sk_DIST_POINT_value(crldp, i);
-//                        if (dp->distpoint->type == 0) { // Full Name
-//                            auto names = dp->distpoint->name.fullname;
-//                            for (int ii = 0; ii != sk_GENERAL_NAME_num(names); ++ii) {
-//                                auto const *const name = sk_GENERAL_NAME_value(names, ii);
-//                                if (name->type == GEN_URI) {
-//                                    ASN1_IA5STRING *uri = name->d.uniformResourceIdentifier;
-//                                    std::string uristr{reinterpret_cast<char *>(uri->data),
-//                                                       static_cast<std::size_t>(uri->length)};
-//                                    Config::config().logger().info("Prefetching CRL for {} - {}", cert_name, uristr);
-//                                    auto coro = CrlCache::crl(uristr);
-//                                    coro.start(); // But then we'd destroy it instantly, so maybe not?
-//                                }
-//                            }
-//                        }
-//                    }
-//                }
-//            }
-        }
-        return 1;
-    }
-}
-
 SSL_CTX * TLSContext::context() {
     if (!m_enabled) return nullptr;
     if (m_ssl_ctx) {
@@ -495,48 +527,10 @@ SSL_CTX * TLSContext::context() {
     return m_ssl_ctx;
 }
 
-void PKIXIdentity::apply(SSL_CTX * ssl_ctx) const {
-    if (SSL_CTX_use_certificate_chain_file(ssl_ctx, m_cert_chain_file.c_str()) != 1) {
-        for (unsigned long e = ERR_get_error(); e != 0; e = ERR_get_error()) {
-//            Config::config().logger().error("OpenSSL Error (chain): {}", ERR_reason_error_string(e));
-        }
-        throw pkix_identity_load_error("Couldn't load chain file: " + m_cert_chain_file);
-    }
-    if (SSL_CTX_use_PrivateKey_file(ssl_ctx, m_pkey_file.c_str(), SSL_FILETYPE_PEM) != 1) {
-        for (unsigned long e = ERR_get_error(); e != 0; e = ERR_get_error()) {
-//            Config::config().logger().error("OpenSSL Error (pkey): {}", ERR_reason_error_string(e));
-        }
-        throw pkix_identity_load_error("Couldn't load keyfile: " + m_pkey_file);
-    }
-    if (SSL_CTX_check_private_key(ssl_ctx) != 1) {
-        for (unsigned long e = ERR_get_error(); e != 0; e = ERR_get_error()) {
-//            Config::config().logger().error("OpenSSL Error (check): {}", ERR_reason_error_string(e));
-        }
-        throw pkix_config_error("Private key mismatch");
-    }
-}
-
 bool TLSContext::enabled() {
     return context() != nullptr;
 }
 
 void TLSContext::add_identity(std::unique_ptr<PKIXIdentity> &&identity) {
     m_identities.emplace(std::move(identity));
-}
-
-void PKIXValidator::add_trust_anchor(std::string const & filename){
-    std::ifstream in(filename);
-    std::string value;
-    value.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
-    if (value.starts_with("-----BEGIN")) {
-        std::unique_ptr<BIO,decltype(&BIO_free)> bio{BIO_new_mem_buf(value.data(), static_cast<int>(value.size())), &BIO_free};
-        auto cert = PEM_read_bio_X509(bio.get(), nullptr, nullptr, nullptr);
-        if (!cert) throw pkix_config_error("Invalid PEM certificate");
-        m_trust_blobs.push_back(cert);
-    } else {
-        const unsigned char * ptr = reinterpret_cast<unsigned char *>(value.data());
-        auto * cert = d2i_X509(nullptr, &ptr, value.size());
-        if (!cert) throw pkix_config_error("Invalid DER certificate");
-        m_trust_blobs.push_back(cert);
-    }
 }

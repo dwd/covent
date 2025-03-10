@@ -6,10 +6,7 @@ option(COVENT_COVERAGE "Coverage support on library and tests" OFF)
 
 set(CMAKE_CXX_STANDARD 23)
 
-if (COVENT_SENTRY)
-    find_package(sentry)
-endif()
-
+find_package(sentry)
 find_package(Libevent)
 find_package(SigSlot)
 find_package(unbound)
@@ -32,6 +29,8 @@ set(COVENT_HEADERS
         include/covent/future.h
         include/covent/discovery.h
         include/covent/gather.h
+        include/covent/sleep.h
+        include/covent/generator.h
         include/covent/crl-cache.h
         include/covent/temp.h)
 
@@ -45,14 +44,13 @@ set(COVENT_SOURCES
         src/dns/dns.cc
         src/tls/pkix.cc
         src/tls/crl-cache.cc
-        include/covent/sleep.h
         src/http/server.cpp
         src/application.cpp
         src/service.cpp
         src/http/client.cpp
         src/http/message.cpp
         src/http/uri.cpp
-        include/covent/generator.h
+        src/sentry-wrap.cc
 )
 
 #add_library(covent SHARED ${COVENT_SOURCES})
@@ -68,7 +66,7 @@ target_include_directories(covent_static PUBLIC
         $<INSTALL_INTERFACE:include>  # <prefix>/ include/ mylib
 )
 #target_link_libraries(covent PUBLIC libevent::libevent sigslot::sigslot unbound::unbound ICU::uc ICU::i18n OpenSSL::SSL OpenSSL::Crypto)
-target_link_libraries(covent_static PUBLIC libevent::libevent sigslot::sigslot unbound::unbound ICU::uc ICU::i18n OpenSSL::SSL OpenSSL::Crypto fmt::fmt spdlog::spdlog)
+target_link_libraries(covent_static PUBLIC libevent::libevent sigslot::sigslot unbound::unbound ICU::uc ICU::i18n OpenSSL::SSL OpenSSL::Crypto fmt::fmt spdlog::spdlog sentry::sentry)
 #set_target_properties(covent PROPERTIES EXPORT_NAME covent)
 
 install(DIRECTORY include/covent TYPE INCLUDE)
@@ -110,11 +108,9 @@ if(COVENT_BUILD_TESTS)
         target_compile_options(covent-test PUBLIC --coverage)
     endif()
 
-    if(COVENT_SENTRY)
-        target_include_directories(covent-test SYSTEM PRIVATE sentry-native/include)
-        target_compile_definitions(covent-test PRIVATE DWD_GTEST_SENTRY=1)
-        target_link_libraries(covent-test PRIVATE sentry::sentry)
-    endif()
+    target_include_directories(covent-test SYSTEM PRIVATE sentry-native/include)
+    target_compile_definitions(covent-test PRIVATE DWD_GTEST_SENTRY=1)
+    target_link_libraries(covent-test PRIVATE sentry::sentry)
 
     include(GoogleTest)
     gtest_discover_tests(covent-test)

@@ -9,6 +9,8 @@
 #include <covent/pkix.h>
 #include <spdlog/logger.h>
 
+#include "generator.h"
+
 namespace covent {
     enum class Preference {
         Yes,
@@ -27,14 +29,11 @@ namespace covent {
         std::string hostname;
         struct sockaddr_storage sockaddr;
         uint16_t port;
-        uint16_t priority; // Priority - do not start any with higher priority value until all those with lower have been exhausted.
-        uint16_t weight; // Should be used for random-selection within priority bands.
     };
 
     class GatheredData {
     public:
         std::set<std::string, std::less<>> gathered_hosts; // verified possible hostnames.
-        std::list<ConnectInfo> gathered_connect; // Connection options, preference order.
         std::list<covent::dns::rr::TLSA> gathered_tlsa; // Verified TLSA records as gathered.
     };
 
@@ -44,25 +43,62 @@ namespace covent {
         Service(Service const &) = delete;
         Service(Service &&) = delete;
 
+        class Entry {
+            Entry * m_parent = nullptr;
+            Service & m_service;
+            std::string m_name;
+            std::unique_ptr<dns::Resolver> m_resolver;
+            std::unique_ptr<pkix::PKIXValidator> m_validator;
+            std::unique_ptr<pkix::TLSContext> m_tls_context;
+            std::shared_ptr<spdlog::logger> m_logger;
+
+        public:
+            explicit Entry(Service & service, std::string_view name);
+            Entry(Service & service, std::string_view name, Entry & parent);
+
+            auto const & name() const {
+                return m_name;
+            }
+
+            template<typename... Args>
+            auto & make_resolver(Args... args) {
+                m_resolver = std::make_unique<dns::Resolver>(std::forward<Args...>(args)...);
+                return *m_resolver;
+            }
+            template<typename... Args>
+            auto & make_validator(Args... args) {
+                m_validator = std::make_unique<pkix::PKIXValidator>(m_service, std::forward<Args>(args)...);
+                return *m_validator;
+            }
+            template<typename... Args>
+            auto & make_tls_context(Args... args) {
+                m_tls_context = std::make_unique<pkix::TLSContext>(m_service, std::forward<Args>(args)...);
+                return *m_tls_context;
+            }
+
+            [[nodiscard]] dns::Resolver & resolver() const;
+            [[nodiscard]] pkix::PKIXValidator & validator() const;
+            [[nodiscard]] pkix::TLSContext & tls_context() const;
+
+            // Do DNS discovery:
+            [[nodiscard]] task<GatheredData> discovery(std::string domain) const;
+            [[nodiscard]] generator_async<dns::rr::SRV> srv_lookup(std::string domain, std::vector<std::string> services, bool dnssec_only = false) const;
+
+            generator_async<ConnectInfo> xmpp_lookup(std::string domain) const;
+
+            [[nodiscard]] task<void> discover_tlsa(dns::Resolver &, GatheredData &, std::string, uint16_t) const;
+        };
+
         void add(std::unique_ptr<ListenerBase> &&);
 
-        void add(std::unique_ptr<pkix::TLSContext> &&);
-        void add(std::unique_ptr<pkix::TLSContext> &&, std::string const & domain);
-        void add(std::unique_ptr<dns::Resolver> &&);
-        void add(std::unique_ptr<dns::Resolver> &&, std::string const & domain);
-
-        [[nodiscard]] pkix::TLSContext & tls_context(std::string const & domain) const;
-        [[nodiscard]] dns::Resolver & resolver(std::string const & domain) const;
-
-        // Do DNS discovery:
-        [[nodiscard]] task<GatheredData> discovery(std::string const &) const;
+        [[nodiscard]] Entry & entry(std::string const & domain) const;
+        Entry & add(std::string_view name);
+        Entry & add(std::string_view name, Entry & parent);
+        Entry & add(std::unique_ptr<Entry> && entry);
 
     private:
-        [[nodiscard]] task<void> discover_host(dns::Resolver &, GatheredData &, const covent::dns::rr::SRV &, ConnectInfo::Method) const;
-        [[nodiscard]] task<void> discover_tlsa(dns::Resolver &, GatheredData &, std::string, uint16_t) const;
-
         std::shared_ptr<spdlog::logger> m_logger;
-        std::map<std::string, std::unique_ptr<dns::Resolver>, std::less<>> m_resolvers;
+        std::map<std::string, std::unique_ptr<Entry>, std::less<>> m_entries;
     };
 }
 

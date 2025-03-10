@@ -101,9 +101,9 @@ namespace covent::dns {
             unsigned short port = 0;
             unsigned short weight = 0;
             unsigned short priority = 0;
-            bool tls = false;
+            std::string service;
 
-            static SRV parse(std::string const &);
+            static SRV parse(std::string const &, std::string const & service);
         };
 
         class SVCB {
@@ -187,14 +187,19 @@ namespace covent::dns {
 
         ~Resolver();
 
+        // This is for testing; prefer `inject` for production cases.
         void add_data(std::string const & zone_record);
 
-        covent::task<answers::SRV> srv(std::string const & service, std::string const &domain);
-        covent::task<answers::SVCB> svcb(std::string const & service, std::string const &domain);
-        covent::task<answers::Address> address_v4(std::string const &hostname);
-        covent::task<answers::Address> address_v6(std::string const &hostname);
+        covent::task<answers::SRV> srv(std::string service, std::string base_domain);
+        covent::task<answers::SVCB> svcb(std::string service, std::string domain);
+        covent::task<answers::Address> address_v4(std::string hostname);
+        covent::task<answers::Address> address_v6(std::string hostname);
+        covent::task<answers::TLSA> tlsa(short unsigned int port, std::string hostname);
 
-        covent::task<answers::TLSA> tlsa(short unsigned int port, std::string const &hostname);
+        void inject(answers::SRV const & srv);
+        void inject(answers::SVCB const & svcb);
+        void inject(answers::Address const & address);
+        void inject(answers::TLSA const & tlsa);
 
         void event_callback();
 
@@ -230,6 +235,12 @@ namespace covent::dns {
         query resolve_async(const std::string &record, int rrtype, covent::future<ub_result *> *fut);
 
         void cancel(int async_id);
+
+        std::unique_ptr<answers::TLSA> m_tlsa;
+        std::unique_ptr<answers::Address> m_a4;
+        std::unique_ptr<answers::Address> m_a6;
+        std::unique_ptr<answers::SVCB> m_svcb;
+        std::map<std::string, std::unique_ptr<answers::SRV>, std::less<>> m_srv;
     };
 }
 //

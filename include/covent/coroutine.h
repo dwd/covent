@@ -14,8 +14,9 @@
 #include <stdexcept>
 #include <optional>
 #include <memory>
+#include <stack>
 #include <sigslot/sigslot.h>
-// #include <sentry.h>
+#include <covent/sentry.h>
 
 namespace covent {
     // Usage: auto & my_promise = co_await own_promise<covent::task<bool>::promise_type>();
@@ -73,18 +74,20 @@ namespace covent {
     };
 
     namespace detail {
+        struct promise_base;
         class Stack {
-            int i = 0;
-//            sentry_transaction_t * trans = nullptr;
-//            sentry_span_t * span = nullptr;
+        public:
+            static inline thread_local std::weak_ptr<Stack> thread_stack = {};
+            std::weak_ptr<sentry::span> current_top = {};
+            std::weak_ptr<sentry::transaction> transaction = {}; // Transaction for this stack, if any.
+            promise_base * current_promise;
         };
 
-        template<typename R>
         struct promise_base {
-            static inline thread_local std::weak_ptr<Stack> thread_stack = {};
             std::exception_ptr eptr;
             std::coroutine_handle<> parent;
             std::shared_ptr<Stack> stack;
+            std::weak_ptr<sentry::span> span;
             sigslot::signal<> completed;
             /**
              * Double duty - a boolean that indicates if the coroutine has been started, and
@@ -94,7 +97,7 @@ namespace covent {
             std::shared_ptr<bool> liveness = std::make_shared<bool>(false);
 
             std::suspend_always initial_suspend() {
-                this->stack = thread_stack.lock();
+                this->stack = Stack::thread_stack.lock();
                 if (!this->stack) {
                     stack = std::make_shared<Stack>();
                     restack();
@@ -103,7 +106,12 @@ namespace covent {
             }
 
             void restack() const {
-                thread_stack = this->stack;
+                Stack::thread_stack = this->stack;
+                this->stack->current_promise = const_cast<promise_base *>(this);
+                auto span = this->span.lock();
+                if (span) {
+                    this->stack->current_top = span;
+                }
             }
 
             struct final_awaiter
@@ -121,6 +129,11 @@ namespace covent {
                 }
             };
             [[nodiscard]] final_awaiter final_suspend() const noexcept {
+                auto span = this->span.lock();
+                if (span && (span.get() == this->stack->current_top.lock().get())) {
+                    this->stack->current_top = span->parent();
+                }
+                this->stack->current_promise = nullptr;
                 return {};
             }
 
@@ -143,7 +156,7 @@ namespace covent {
         template<typename R, typename V=typename R::value_type> struct promise;
 
         template<typename R, reference V>
-        struct promise<R,V> : promise_base<R> {
+        struct promise<R,V> : promise_base {
             using value_type = std::remove_reference_t<V>;
             using handle_type = std::coroutine_handle<promise<R, V>>;
             value_type * value;
@@ -164,7 +177,7 @@ namespace covent {
         };
 
         template<typename R, pointer V>
-        struct promise<R,V> : promise_base<R> {
+        struct promise<R,V> : promise_base {
             using value_type = std::remove_pointer_t<V>;
             using handle_type = std::coroutine_handle<promise<R, V>>;
             value_type * value;
@@ -185,7 +198,7 @@ namespace covent {
         };
 
         template<typename R, refreference V>
-        struct promise<R,V> : promise_base<R> {
+        struct promise<R,V> : promise_base {
             using value_type = std::remove_reference_t<V>;
             using handle_type = std::coroutine_handle<promise<R, V>>;
             std::optional<value_type> value;
@@ -206,7 +219,7 @@ namespace covent {
         };
 
         template<typename R, move V>
-        struct promise<R,V> : promise_base<R> {
+        struct promise<R,V> : promise_base {
             using value_type = V;
             using handle_type = std::coroutine_handle<promise<R, V>>;
             std::optional<value_type> value;
@@ -227,7 +240,7 @@ namespace covent {
         };
 
         template<typename R, copymove V>
-        struct promise<R,V> : promise_base<R> {
+        struct promise<R,V> : promise_base {
             using value_type = V;
             using handle_type = std::coroutine_handle<promise<R, V>>;
             std::optional<value_type> value;
@@ -253,7 +266,7 @@ namespace covent {
         };
 
         template<typename R, copy V>
-        struct promise<R,V> : promise_base<R> {
+        struct promise<R,V> : promise_base {
             using value_type = V;
             using handle_type = std::coroutine_handle<promise<R, V>>;
             std::optional<value_type> value;
@@ -274,7 +287,7 @@ namespace covent {
         };
 
         template<typename R, trivial V>
-        struct promise<R,V> : promise_base<R> {
+        struct promise<R,V> : promise_base {
             using value_type = V;
             using handle_type = std::coroutine_handle<promise<R, V>>;
             std::optional<value_type> value;
@@ -295,7 +308,7 @@ namespace covent {
         };
 
         template<typename R>
-        struct promise<R, void> : promise_base<R> {
+        struct promise<R, void> : promise_base {
             using handle_type = std::coroutine_handle<promise<R, void>>;
 
             R get_return_object() {
@@ -353,6 +366,7 @@ namespace covent {
 
         bool start() const { // NOLINT
             *handle.promise().liveness = true;
+            handle.promise().restack();
             handle.resume();
             return handle.done();
         }
@@ -406,19 +420,8 @@ namespace covent {
 
             void resume(std::coroutine_handle<P> coro, covent::instant_task<void>::promise_type & p) {
                 // TODO: Shuffle virtual callstack, schedule call.
-                if (coro.promise().same_loop()) {
-                    p.parent = coro;
-                    return;
-                }
-                auto * l = coro.promise().loop;
-                std::weak_ptr<bool> liveness = coro.promise().liveness;
-
-                l->defer([coro, liveness](){
-                    if (auto alive = liveness.lock(); alive) {
-                        coro.promise().restack();
-                        coro.resume();
-                    }
-                });
+                auto handle = coro.promise().resume_handle(coro);
+                p.parent = handle;
             }
 
             auto await_ready() const {
@@ -480,11 +483,30 @@ namespace covent {
             template<typename ...Args>
             wrapped_promise(L & l, Args & ...other_args) : loop(&l) {}
 
-            bool same_loop() {
+            bool same_loop() const {
                 return loop == &L::thread_loop();
             }
+            std::coroutine_handle<> resume_handle(std::coroutine_handle<wrapped_promise> mine) const {
+                if (same_loop()) {
+                    *this->liveness = true;
+                    this->restack();
+                    return mine;
+                } else {
+                    auto * l = loop;
+                    std::weak_ptr<bool> alive = this->liveness;
 
-            using handle_type = std::__n4861::coroutine_handle<wrapped_promise<R>>;
+                    l->defer([handle=mine, alive](){
+                        if (auto liveness = alive.lock(); liveness) {
+                            *handle.promise().liveness = true;
+                            handle.promise().restack();
+                            handle.resume();
+                        }
+                    });
+                    return std::noop_coroutine();
+                }
+            }
+
+            using handle_type = std::coroutine_handle<wrapped_promise<R>>;
             R get_return_object() {
                 return R{handle_type::from_promise(*this)};
             }
@@ -519,39 +541,12 @@ namespace covent {
         handle_type handle;
         bool start() const { // NOLINT
             if (!handle) throw std::logic_error("No such coroutine");
-            if (handle.promise().same_loop()) {
-                *handle.promise().liveness = true;
-                handle.resume();
-            } else {
-                auto * l = handle.promise().loop;
-                std::weak_ptr<bool> alive = handle.promise().liveness;
-
-                l->defer([handle= this->handle, alive](){
-                    if (auto liveness = alive.lock(); liveness) {
-                        *handle.promise().liveness = true;
-                        handle.resume();
-                    }
-                });
-            }
+            resume_handle().resume();
             return handle.done();
         }
 
         std::coroutine_handle<> resume_handle() const {
-            if (handle.promise().same_loop()) {
-                *handle.promise().liveness = true;
-                return handle;
-            } else {
-                auto * l = handle.promise().loop;
-                std::weak_ptr<bool> alive = handle.promise().liveness;
-
-                l->defer([handle= this->handle, alive](){
-                    if (auto liveness = alive.lock(); liveness) {
-                        *handle.promise().liveness = true;
-                        handle.resume();
-                    }
-                });
-                return std::noop_coroutine();
-            }
+            return handle.promise().resume_handle(handle);
         }
         [[nodiscard]] bool done() const {
             if (!handle) throw std::logic_error("No such coroutine");

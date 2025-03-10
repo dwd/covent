@@ -15,6 +15,7 @@
 #include "dns.h"
 #include "http.h"
 #include "pkix.h"
+#include "service.h"
 
 struct evhttp_request;
 struct evhttp;
@@ -129,10 +130,10 @@ struct bufferevent;
         private:
             std::unique_ptr<Message> m_response;
         };
-        class Client {
+        class Client  {
         public:
-            Client(covent::dns::Resolver &, covent::pkix::PKIXValidator &, covent::pkix::TLSContext &, URI const & uri);
-            Client(covent::dns::Resolver &, covent::pkix::PKIXValidator &, covent::pkix::TLSContext &, std::string_view uri);
+            Client(Service & service, URI const & uri);
+            Client(Service & service, std::string_view uri);
 
             Request request(Method, URI const & uri, std::optional<std::string> body = {});
             Request request(Method, std::string_view uri, std::optional<std::string> body = {});
@@ -146,11 +147,9 @@ struct bufferevent;
             [[nodiscard]] covent::task<std::shared_ptr<HTTPSession>> connect_v6(URI const & uri) const;
 
             Loop & m_loop;
+            Service & m_service;
             URI m_uri;
             std::unique_ptr<Session> m_session;
-            covent::dns::Resolver & m_resolver;
-            covent::pkix::PKIXValidator & m_validator;
-            covent::pkix::TLSContext & m_tls_context;
         };
         class Request {
         public:
@@ -213,11 +212,14 @@ struct bufferevent;
         };
         class Server {
         public:
-            Server(short unsigned int port, covent::pkix::TLSContext & tls_context);
+            explicit Server(short unsigned int port, bool tls);
             ~Server();
 
             [[nodiscard]] Endpoint & root() const {
                 return *m_root;
+            }
+            [[nodiscard]] Service & service() const {
+                return *m_service;
             }
 
             void add(std::unique_ptr<Endpoint> && endpoint);
@@ -225,7 +227,7 @@ struct bufferevent;
 			struct bufferevent * get_buffer_event(struct event_base *);
 			void request_handler(struct evhttp_request * req);
         private:
-            covent::pkix::TLSContext & m_tls_context;
+            std::unique_ptr<Service> m_service;
             std::unique_ptr<Endpoint> m_root;
             struct evhttp * m_server;
             std::list<covent::task<void>> m_in_flight;

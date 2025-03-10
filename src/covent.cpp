@@ -7,6 +7,7 @@
 #include <event2/thread.h>
 #include <event2/listener.h>
 #include <list>
+#include <covent/service.h>
 
 namespace {
     thread_local covent::Loop * s_thread_loop = nullptr;
@@ -20,6 +21,10 @@ covent::Loop::Loop() {
     });
     if (!s_main_loop) s_main_loop = this;
     if (!s_thread_loop) s_thread_loop = this;
+    m_http_service = std::make_unique<Service>();
+    m_http_service->entry("").make_resolver(false);
+    m_http_service->entry("").make_tls_context(true, true, "default");
+    m_http_service->entry("").make_validator(true, true);
 }
 
 covent::Loop &covent::Loop::thread_loop() {
@@ -180,27 +185,6 @@ void covent::Loop::remove(const covent::Session &sess) {
 
 void covent::Loop::remove(std::shared_ptr<Session> const & sess) {
     m_sessions.erase(sess);
-}
-
-covent::dns::Resolver &covent::Loop::default_resolver() {
-    if (!m_default_resolver) {
-        m_default_resolver = std::make_unique<covent::dns::Resolver>(false, false, std::optional<std::string>{});
-    }
-    return *m_default_resolver;
-}
-
-covent::pkix::TLSContext &covent::Loop::default_tls_context() {
-    if (!m_default_tls_context) {
-        m_default_tls_context = std::make_unique<pkix::TLSContext>(true, false, "default");
-    }
-    return *m_default_tls_context;
-}
-
-covent::pkix::PKIXValidator &covent::Loop::default_pkix_validator() {
-    if (!m_default_pkix_validator) {
-        m_default_pkix_validator = std::make_unique<pkix::PKIXValidator>();
-    }
-    return *m_default_pkix_validator;
 }
 
 covent::task<void> covent::detail::dummy() {

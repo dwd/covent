@@ -10,23 +10,14 @@
 
 using namespace covent::http;
 
-namespace {
-    void request_complete(struct evhttp_request *, void * v) {
-        auto req = reinterpret_cast<Request *>(v);
-        req->complete();
-    }
-}
-
 Request::Request(Method m, URI const & uri)
 : method(m), m_loop(Loop::thread_loop()), m_request(std::make_unique<Message>(uri)), m_client_temp(
-      std::make_unique<Client>(m_loop.default_resolver(), m_loop.default_pkix_validator(), m_loop.default_tls_context(),
-                               uri)), m_client(*m_client_temp)  {
+      std::make_unique<Client>(m_loop.http_service(), uri)), m_client(*m_client_temp)  {
 }
 
 Request::Request(Method m, std::string_view uri)
 : method(m), m_loop(Loop::thread_loop()), m_request(std::make_unique<Message>(uri)), m_client_temp(
-      std::make_unique<Client>(m_loop.default_resolver(), m_loop.default_pkix_validator(), m_loop.default_tls_context(),
-                               uri)), m_client(*m_client_temp)  {
+      std::make_unique<Client>(m_loop.http_service(), uri)), m_client(*m_client_temp)  {
 }
 
 Request::Request(Client & client, Method m, URI const & uri)

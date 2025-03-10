@@ -49,14 +49,14 @@ namespace covent::pkix {
 
     class PKIXValidator {
     public:
-        PKIXValidator();
         PKIXValidator(PKIXValidator const &) = delete;
-        explicit PKIXValidator(bool crls, bool use_system_trust);
+        explicit PKIXValidator(Service & service, bool crls, bool use_system_trust);
         void add_trust_anchor(std::string const & trust_anchor);
         covent::task<bool> verify_tls(SSL *, std::string);
         covent::task<void> fetch_crls(const SSL *, X509 * cert);
 
     private:
+        Service & m_service;
         bool m_enabled;
         bool m_crls;
         bool m_system_trust;
@@ -69,7 +69,7 @@ namespace covent::pkix {
         TLSContext() = delete;
         TLSContext(TLSContext const &) = delete;
         void operator = (TLSContext const &) = delete;
-        TLSContext(bool enabled, bool validation, std::string const & domain);
+        TLSContext(Service & service, bool enabled, bool validation, std::string const & domain);
         ~TLSContext();
         SSL_CTX* context();
         SSL * instantiate(bool connecting, std::string const & remote_domain);
@@ -120,6 +120,7 @@ namespace covent::pkix {
         }
 
     private:
+        Service & m_service;
         bool m_enabled = true;
         bool m_validation = true;
         std::string m_domain;
@@ -129,7 +130,6 @@ namespace covent::pkix {
         int m_max_version;
         std::set<std::unique_ptr<PKIXIdentity>> m_identities;
         SSL_CTX * m_ssl_ctx = nullptr;
-        Service * m_service;
         // spdlog::logger m_log;
     };
 

@@ -92,13 +92,14 @@ std::string covent::dns::utils::read_hostname(std::istringstream & ss) {
     return hostname;
 }
 
-rr::SRV rr::SRV::parse(std::string const & s) {
+rr::SRV rr::SRV::parse(std::string const & s, std::string const & service) {
     std::istringstream ss(s);
     rr::SRV rr;
     rr.priority = utils::read_uint<uint16_t>(ss);
     rr.weight = read_uint<uint16_t>(ss);
     rr.port = read_uint<uint16_t>(ss);
     rr.hostname = read_hostname(ss);
+    rr.service = service;
     return rr;
 }
 
@@ -286,7 +287,8 @@ namespace {
     }
 }
 
-covent::task<answers::Address> Resolver::address_v4(std::string const &ihostname) {
+covent::task<answers::Address> Resolver::address_v4(std::string ihostname) {
+    if (m_a4) co_return *m_a4;
     std::string hostname = toASCII(ihostname);
     covent::future<ub_result *> fut;
     auto query = resolve_async(hostname, 1, &fut);
@@ -303,7 +305,33 @@ covent::task<answers::Address> Resolver::address_v4(std::string const &ihostname
     co_return address;
 }
 
-covent::task<answers::Address> Resolver::address_v6(std::string const &ihostname) {
+void Resolver::inject(answers::Address const & address) {
+    bool has4 = false;
+    for (auto const & a : address.addr) {
+        if (a.ss_family == AF_INET) {
+            has4 = true;
+            break;
+        }
+    }
+    if (has4) {
+        m_a4 = std::make_unique<answers::Address>(address);
+        m_a4->addr.erase(std::remove_if(m_a4->addr.begin(), m_a4->addr.end(), [](auto & x) { return x.ss_family != AF_INET; }));
+    }
+    bool has6 = false;
+    for (auto const & a : address.addr) {
+        if (a.ss_family == AF_INET6) {
+            has6 = true;
+            break;
+        }
+    }
+    if (has6) {
+        m_a6 = std::make_unique<answers::Address>(address);
+        m_a6->addr.erase(std::remove_if(m_a6->addr.begin(), m_a6->addr.end(), [](auto & x) { return x.ss_family != AF_INET6; }));
+    }
+}
+
+covent::task<answers::Address> Resolver::address_v6(std::string ihostname) {
+    if (m_a6) co_return *m_a6;
     std::string hostname = toASCII(ihostname);
     covent::future<ub_result *> fut;
     auto query = resolve_async(hostname, 28, &fut);
@@ -320,7 +348,10 @@ covent::task<answers::Address> Resolver::address_v6(std::string const &ihostname
     co_return address;
 }
 
-covent::task<answers::SRV> Resolver::srv(std::string const & service, std::string const &base_domain) {
+covent::task<answers::SRV> Resolver::srv(std::string service, std::string base_domain) {
+    if (const auto it{m_srv.find(service)}; it != m_srv.end()) {
+        co_return *it->second;
+    }
     std::string domain = toASCII("_" + service + "._tcp." + base_domain + ".");
     covent::future<ub_result *> fut;
     auto query = resolve_async(domain, 33, &fut);
@@ -328,13 +359,32 @@ covent::task<answers::SRV> Resolver::srv(std::string const & service, std::strin
     auto srv = init_answer<answers::SRV>(result.result, m_dnssec_required);
     if (srv.error.empty()) {
         for (int i = 0; result->data[i]; ++i) {
-            srv.rrs.push_back(rr::SRV::parse(std::string(result->data[i], result->len[i])));
+            srv.rrs.push_back(rr::SRV::parse(std::string(result->data[i], result->len[i]), service));
         }
     }
     co_return srv;
 }
 
-covent::task<answers::SVCB> Resolver::svcb(std::string const & service, std::string const &base_domain) {
+void Resolver::inject(answers::SRV const &srv) {
+    for (auto const & rr : srv.rrs) {
+        auto it = m_srv.find(rr.service);
+        if (it == m_srv.end()) {
+            auto [new_it, ok] = m_srv.emplace(rr.service, std::make_unique<answers::SRV>(srv));
+            if (ok) {
+                it = new_it;
+                it->second->rrs.clear();
+            } else {
+                continue;
+            }
+        }
+        it->second->rrs.push_back(rr);
+    }
+}
+
+covent::task<answers::SVCB> Resolver::svcb(std::string service, std::string base_domain) {
+    if (m_svcb) {
+        co_return *m_svcb;
+    }
     std::string domain = toASCII("_" + service + "." + base_domain + ".");
     covent::future<ub_result *> fut;
     auto query = resolve_async(domain, 65, &fut);
@@ -348,7 +398,12 @@ covent::task<answers::SVCB> Resolver::svcb(std::string const & service, std::str
     co_return svcb;
 }
 
-covent::task<answers::TLSA> Resolver::tlsa(unsigned short port, std::string const &base_domain) {
+void Resolver::inject(answers::SVCB const & svcb) {
+    m_svcb = std::make_unique<answers::SVCB>(svcb);
+}
+
+covent::task<answers::TLSA> Resolver::tlsa(unsigned short port, std::string base_domain) {
+    if (m_tlsa) co_return *m_tlsa;
     std::ostringstream out;
     out << "_" << port << "._tcp." << base_domain;
     std::string domain = toASCII(out.str());
@@ -362,6 +417,10 @@ covent::task<answers::TLSA> Resolver::tlsa(unsigned short port, std::string cons
         }
     }
     co_return tlsa;
+}
+
+void Resolver::inject(answers::TLSA const & tlsa) {
+    m_tlsa = std::make_unique<answers::TLSA>(tlsa);
 }
 
 void Resolver::add_data(std::string const & zone_record) {

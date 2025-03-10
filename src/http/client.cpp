@@ -34,12 +34,12 @@ public:
     }
 };
 
-Client::Client(covent::dns::Resolver & r, covent::pkix::PKIXValidator & v, covent::pkix::TLSContext & t, URI const & uri)
-    : m_loop(covent::Loop::thread_loop()), m_uri(uri), m_resolver(r), m_validator(v), m_tls_context(t) {
+Client::Client(Service & service, URI const & uri)
+    : m_loop(covent::Loop::thread_loop()), m_service(service), m_uri(uri) {
 }
 
-Client::Client(covent::dns::Resolver & r, covent::pkix::PKIXValidator & v, covent::pkix::TLSContext & t, std::string_view uri)
-    : m_loop(covent::Loop::thread_loop()), m_uri(uri), m_resolver(r), m_validator(v), m_tls_context(t) {
+Client::Client(Service & service, std::string_view uri)
+    : m_loop(covent::Loop::thread_loop()), m_service(service), m_uri(uri) {
 }
 
 Request Client::request(Method method, URI const & uri, std::optional<std::string> body) {
@@ -57,6 +57,8 @@ covent::task<std::shared_ptr<Client::HTTPSession>> Client::connect(covent::dns::
     }
     bool success = false;
     auto session = std::make_shared<HTTPSession>(m_loop); // Don't add it to the loop yet!
+    auto & tls_context = m_service.entry(uri.host).tls_context();
+    auto & validator = m_service.entry(uri.host).validator();
     std::cerr << "Connect loop start" << std::endl;
     for (auto & s : address.addr) {
         try {
@@ -65,9 +67,9 @@ covent::task<std::shared_ptr<Client::HTTPSession>> Client::connect(covent::dns::
             std::cerr << "Connected" << std::endl;
             if (ssl) {
                 std::cerr << "SSL start" << std::endl;
-                co_await session->ssl(m_tls_context.instantiate(true, uri.host), true);
+                co_await session->ssl(tls_context.instantiate(true, uri.host), true);
                 std::cerr << "SSL end" << std::endl;
-                co_await m_validator.verify_tls(session->ssl(), uri.host);
+                co_await validator.verify_tls(session->ssl(), uri.host);
                 std::cerr << "SSL validation" << std::endl;
             }
             std::cerr << "Session ready" << std::endl;
@@ -87,11 +89,13 @@ covent::task<std::shared_ptr<Client::HTTPSession>> Client::connect(covent::dns::
 
 covent::task<std::shared_ptr<Client::HTTPSession>> Client::connect_v4(URI const & uri) const {
     std::cerr << "Here -- v4" << std::endl;
-    co_return co_await connect(co_await m_resolver.address_v4(uri.host), uri);
+    auto & resolver = m_service.entry(uri.host).resolver();
+    co_return co_await connect(co_await resolver.address_v4(uri.host), uri);
 }
 
 covent::task<std::shared_ptr<Client::HTTPSession>> Client::connect_v6(URI const & uri) const {
-    co_return co_await connect(co_await m_resolver.address_v6(uri.host), uri);
+    auto & resolver = m_service.entry(uri.host).resolver();
+    co_return co_await connect(co_await resolver.address_v6(uri.host), uri);
 }
 
 covent::task<std::unique_ptr<Response>> Client::send(Request const &r) {

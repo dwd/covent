@@ -12,7 +12,7 @@
 
 namespace covent {
     template<typename T>
-    class generator {
+    class [[nodiscard]] generator {
     public:
         using value_pointer = std::remove_reference_t<T> *;
         struct handle_type;
@@ -79,7 +79,7 @@ namespace covent {
     };
 
     template<typename T>
-    class generator_async {
+    class [[nodiscard]] generator_async {
     public:
         using value_pointer = std::remove_reference_t<T> *;
         struct handle_type;

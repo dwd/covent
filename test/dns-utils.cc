@@ -138,7 +138,7 @@ TEST(DNS_Utils, parse_svcb_9) {
 
 TEST(DNS_Utils, parse_srv_1) {
     std::string data("\x00\x10\x00\x01\x00\x80\003foo\007example\003com\x00", 23);
-    auto rr = covent::dns::rr::SRV::parse(data);
+    auto rr = covent::dns::rr::SRV::parse(data, "service");
     ASSERT_EQ(rr.hostname, "foo.example.com.");
 }
 

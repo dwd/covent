@@ -228,10 +228,13 @@ TEST(CoroRace, race_classic) {
 
 namespace {
     covent::task<void> inner() {
+        auto span = covent::sentry::span::start("fn.call", "inner");
         co_await covent::own_promise<covent::task<void>::promise_type>();
         throw std::runtime_error("Whoops");
     }
     covent::task<void> outer() {
+        auto trans = covent::sentry::transaction::start("test.test", "outer");
+        auto span = covent::sentry::span::start("fn.call", "outer");
         co_await inner();
     }
 }

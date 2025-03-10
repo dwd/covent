@@ -44,10 +44,12 @@ TEST(HTTP, RequestSimple) {
 
 TEST(HTTP_Client, RequestSimple) {
     covent::Loop loop;
-    covent::pkix::TLSContext tls(true, true, "localhost");
-    covent::dns::Resolver res(false);
-    covent::pkix::PKIXValidator validator(true, true);
-    covent::http::Client client(res, validator, tls, "https://www.google.com");
+    auto & service = loop.http_service();
+    auto & entry = service.entry("*.google.com");
+    entry.make_resolver(false);
+    entry.make_tls_context(true, true, "localhost");
+    entry.make_validator(true, true);
+    covent::http::Client client(service, "https://www.google.com");
     auto req = client.request(covent::http::Method::GET, "https://www.google.com", {});
     auto resp = loop.run_task(req());
     EXPECT_EQ(resp->status(), 200);
@@ -58,8 +60,7 @@ TEST(HTTP_Client, RequestSimple) {
 
 TEST(HTTP_Server, MissingRoot) {
     covent::Loop loop;
-    covent::pkix::TLSContext tls(false, false,"localhost");
-    covent::http::Server srv(8001, tls);
+    covent::http::Server srv(8001, false);
     loop.run_once(false);
     covent::http::Request req(covent::http::Method::GET, "http://localhost:8001/");
     auto resp = loop.run_task(req());
@@ -68,8 +69,7 @@ TEST(HTTP_Server, MissingRoot) {
 
 TEST(HTTP_Server, NotFound) {
     covent::Loop loop;
-    covent::pkix::TLSContext tls(false, false,"localhost");
-    covent::http::Server srv(8001, tls);
+    covent::http::Server srv(8001, false);
     srv.add(std::make_unique<covent::http::Endpoint>("/"));
     covent::http::Request req(covent::http::Method::GET, "http://localhost:8001/");
     auto resp = loop.run_task(req());
@@ -78,8 +78,7 @@ TEST(HTTP_Server, NotFound) {
 
 TEST(HTTP_Server, Path) {
     covent::Loop loop;
-    covent::pkix::TLSContext tls(false, false,"localhost");
-    covent::http::Server srv(8001, tls);
+    covent::http::Server srv(8001, false);
     srv.add(std::make_unique<covent::http::Endpoint>("/"));
     srv.add(std::make_unique<covent::http::Endpoint>("/test", [](evhttp_request * req) -> covent::task<int> {
         evhttp_send_reply(req, 201, "OK", nullptr);
@@ -104,8 +103,7 @@ TEST(HTTP_Server, Path) {
 
 TEST(HTTP_Server, Middleware) {
     covent::Loop loop;
-    covent::pkix::TLSContext tls(false, false,"localhost");
-    covent::http::Server srv(8001, tls);
+    covent::http::Server srv(8001, false);
     srv.add(std::make_unique<covent::http::Endpoint>("/"));
     srv.add(std::make_unique<covent::http::Endpoint>("/test", [](evhttp_request * req) -> covent::task<int> {
         evhttp_send_reply(req, 201, "OK", nullptr);
