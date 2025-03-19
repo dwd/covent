@@ -72,7 +72,7 @@ pkix::TLSContext &Service::Entry::tls_context() const {
 }
 
 pkix::PKIXValidator &Service::Entry::validator() const {
-    if (m_tls_context) return *m_validator;
+    if (m_validator) return *m_validator;
     if (m_parent) return m_parent->validator();
     if (!m_name.empty()) return m_service.entry("").validator();
     return const_cast<Entry * const>(this)->make_validator(false, true);
