@@ -28,6 +28,8 @@ SOFTWARE.
 #define COVENT_PKIX_H
 
 #include <openssl/ossl_typ.h>
+#include <spdlog/spdlog.h>
+
 #include "covent/dns.h"
 
 
@@ -62,6 +64,7 @@ namespace covent::pkix {
         bool m_system_trust;
         std::set<std::string, std::less<>> m_trust_anchors;
         std::vector<X509 *> m_trust_blobs;
+        std::shared_ptr<spdlog::logger> m_log;
     };
 
     class TLSContext {
@@ -73,7 +76,7 @@ namespace covent::pkix {
         ~TLSContext();
         SSL_CTX* context();
         SSL * instantiate(bool connecting, std::string const & remote_domain);
-        bool enabled();
+        bool enabled() const;
         void add_identity(std::unique_ptr<PKIXIdentity> && identity);
 
         void enabled(bool e);
@@ -130,7 +133,7 @@ namespace covent::pkix {
         int m_max_version;
         std::set<std::unique_ptr<PKIXIdentity>> m_identities;
         SSL_CTX * m_ssl_ctx = nullptr;
-        // spdlog::logger m_log;
+        std::shared_ptr<spdlog::logger> m_log;
     };
 
     class pkix_error : public std::runtime_error {

@@ -201,9 +201,9 @@ generator_async<covent::dns::rr::SRV> Service::Entry::srv_lookup(std::string con
         srv_def.rrs.clear();
     }
     for (; it != srv_list.end(); ++it) {
-        auto & srv_tls = *it;
+        auto const & srv_tls = *it;
         if (!srv_tls.dnssec && dnssec_only) continue;
-        for (auto & rr : srv_tls.rrs) {
+        for (auto const & rr : srv_tls.rrs) {
             srv_def.rrs.push_back(rr);
         }
     }

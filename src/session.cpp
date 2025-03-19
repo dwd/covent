@@ -2,14 +2,15 @@
 // Created by dwd on 8/26/24.
 //
 
+#include <covent/app.h>
 #include <covent/core.h>
 #include <covent/loop.h>
 #include <event2/bufferevent.h>
 #include <event2/event.h>
 #include <event2/buffer.h>
-#include <iostream>
 #include <covent/http.h>
 #include <event2/bufferevent_ssl.h>
+#include <openssl/err.h>
 
 namespace{
     covent::Session::id_type next_id = 0;
@@ -28,9 +29,11 @@ namespace{
 }
 
 covent::Session::Session(Loop & loop): m_id(next_id++), m_loop(loop) {
+    m_log = Application::application().logger("Session");
 }
 
 covent::Session::Session(covent::Loop &loop, int sock, ListenerBase &): m_id(next_id++), m_loop(loop) {
+    m_log = Application::application().logger("Session");
     m_top = bufferevent_socket_new(m_loop.event_base(), sock, BEV_OPT_CLOSE_ON_FREE);
     bufferevent_setcb(m_top, bev_read_cb, bev_write_cb, bev_event_cb, this);
     bufferevent_enable(m_top, EV_READ | EV_WRITE);
@@ -46,11 +49,11 @@ covent::Session::~Session() {
 covent::task<void> covent::Session::connect(const struct sockaddr * addr, size_t addrlen) {
     if (m_top) throw covent_logic_error("Already connected?");
     m_top = bufferevent_socket_new(m_loop.event_base(), -1, BEV_OPT_CLOSE_ON_FREE);
-    std::cerr << "Connecting to [" << address_tostring(addr) << "]:" << address_toport(addr) << std::endl;
+    m_log->info("Connecting to [{}]:{}", address_tostring(addr), address_toport(addr));
     bufferevent_setcb(m_top, bev_read_cb, bev_write_cb, bev_event_cb, this);
     if (0 > bufferevent_socket_connect(m_top, addr, static_cast<int>(addrlen))) {
         m_top = nullptr;
-        std::cerr << "Connect: " << std::strerror(errno) << std::endl;
+        m_log->info("Connect: {}", std::strerror(errno));
         throw covent_runtime_error(std::strerror(errno));
     }
     bufferevent_enable(m_top, EV_READ | EV_WRITE);
@@ -80,12 +83,12 @@ void covent::Session::processing_complete() {
         auto used_octets = m_processor->get();
         if (used_octets) used(used_octets);
         if (m_closing) {
-            std::cerr << "Retry close" << std::endl;
+            m_log->debug("Retry close");
             close();
         }
     } catch(std::exception & e) {
         // Unhandled exception.
-        std::cerr << "Deferred exception caught: " << e.what() << std::endl;
+        m_log->debug("Deferred exception caught: {}", e.what());
         close();
     }
 }
@@ -104,22 +107,20 @@ void covent::Session::read_cb(struct bufferevent *) {
     // We'll try first using whatever contiguous data we have to hand:
     size_t len;
     struct evbuffer *buf = bufferevent_get_input(m_top);
-    std::cerr << "Contiguous, " << static_cast<void *>(buf) << std::endl;
     while ((len = evbuffer_get_contiguous_space(buf)) > 0) {
         try {
             m_processor.emplace(process({reinterpret_cast<char *>(evbuffer_pullup(buf, static_cast<ssize_t>(len))), len}));
             if (!m_processor->start()) {
-                std::cerr << "Deferring " << static_cast<void *>(buf) << std::endl;
                 m_processor->on_completed(this, &Session::processing_complete);
                 return;
             }
             auto used_octets = m_processor->get();
             m_processor.reset();
-            std::cerr << "Immediate " << static_cast<void *>(buf) << " - used " << used_octets << std::endl;
+            m_log->trace("Immediate/contiguous: used {} octets", used_octets);
             if (!used_octets) break;
             used(used_octets);
         } catch (std::exception & e) {
-            std::cerr << "Immediate contiguous exception caught: " << e.what() << std::endl;
+            m_log->debug("Immediate/contiguous: exception caught: {}", e.what());
             m_processor.reset();
             close();
             return;
@@ -132,10 +133,8 @@ void covent::Session::read_cb(struct bufferevent *) {
     buf = bufferevent_get_input(m_top);
     if (evbuffer_get_contiguous_space(buf) == evbuffer_get_length(buf)) {
         // No need to retry.
-        std::cerr << "No pull-up " << static_cast<void *>(buf) << std::endl;
         return;
     }
-    std::cerr << "Pull-up, " << static_cast<void *>(buf) << std::endl;
     while ((len = evbuffer_get_length(buf)) > 0) {
         try {
             m_processor.emplace(process({reinterpret_cast<char *>(evbuffer_pullup(buf, -1)), len}));
@@ -145,10 +144,11 @@ void covent::Session::read_cb(struct bufferevent *) {
             }
             auto used_octets = m_processor->get();
             m_processor.reset();
+            m_log->trace("Immediate/pull-up: used {} octets", used_octets);
             if (!used_octets) break;
             used(used_octets);
         } catch(std::exception& e) {
-            std::cerr << "Immediate pull-up exception caught: " << e.what() << std::endl;
+            m_log->debug("Immediate/pull-up: exception caught: {}", e.what());
             m_processor.reset();
             close();
             return;
@@ -162,7 +162,6 @@ void covent::Session::read_cb(struct bufferevent *) {
 void covent::Session::write_cb(struct bufferevent *) {
     this->written.emit();
     if (m_closing) {
-        std::cerr << "Write retry close" << std::endl;
         close();
     }
     // Not actually sure!
@@ -170,24 +169,27 @@ void covent::Session::write_cb(struct bufferevent *) {
 
 void covent::Session::event_cb(struct bufferevent * buf, short flags) {
     if (buf != m_top) {
-        std::cerr << "Not mine" << std::endl;
         return;
     }
-    std::cerr << "Flags: " << flags << " Serial:" << id() << std::endl;
     if (flags & BEV_EVENT_CONNECTED) {
-        std::cerr << "Flags: Connected " << flags << std::endl;
+        m_log->debug("Connected");
         this->connected.emit();
     }
     if (flags & BEV_EVENT_EOF) {
-        std::cerr << "Flags: Closed " << flags << std::endl;
+        m_log->debug("Disconnected");
         this->closed();
     }
     if (flags & BEV_EVENT_ERROR) {
-        std::cerr << "Flags: Error " << flags << " " << std::strerror(errno) << std::endl;
+        m_log->error("Error: {}", strerror(EVUTIL_SOCKET_ERROR()));
+        while (unsigned long ssl_err = bufferevent_get_openssl_error(buf)) {
+            std::array<char, 1024> err_buffer = {};
+            ERR_error_string_n(ssl_err, err_buffer.data(), 1024);
+            m_log->error(" - OpenSSL error: {}", err_buffer.data());
+        }
         this->closed();
     }
     if (flags & BEV_EVENT_TIMEOUT) {
-        std::cerr << "Flags: Timeout " << flags << std::endl;
+        m_log->warn("Timeout");
         this->closed();
     }
     // Process flags (close, etc).
@@ -198,7 +200,6 @@ SSL * covent::Session::ssl() const {
 }
 
 sigslot::signal<> & covent::Session::ssl(SSL *s, bool connecting) {
-    std::cerr << "SSL switch" << std::endl;
     m_top = bufferevent_openssl_filter_new(bufferevent_get_base(m_top), m_top, s, connecting ? BUFFEREVENT_SSL_CONNECTING : BUFFEREVENT_SSL_ACCEPTING, BEV_OPT_CLOSE_ON_FREE);
     bufferevent_setcb(m_top, bev_read_cb, bev_write_cb, bev_event_cb, this);
     bufferevent_enable(m_top, EV_READ | EV_WRITE);
@@ -208,22 +209,17 @@ sigslot::signal<> & covent::Session::ssl(SSL *s, bool connecting) {
 void covent::Session::close() {
     m_closing = true;
     if (m_processor.has_value() && !m_processor->done()) {
-        std::cerr << "Deferring close due to processor" << std::endl;
         return;
     }
     if (m_top) {
-        std::cerr << "Close flush" << std::endl;
         bufferevent_flush(m_top, EV_WRITE, BEV_FINISHED);
         auto * buf = bufferevent_get_output(m_top);
         if (evbuffer_get_length(buf) > 0) {
-            std::cerr << "Deferring close due to pending write" << std::endl;
             return;
         }
-        std::cerr << "Kill m_top"  << std::endl;
         bufferevent_free(m_top);
         m_top = nullptr;
     }
-    std::cerr << "Close real" << std::endl;
     m_loop.defer([session = this, loop = &m_loop]() {
         loop->remove(*session);
     });

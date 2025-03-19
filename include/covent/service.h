@@ -62,7 +62,7 @@ namespace covent {
 
             template<typename... Args>
             auto & make_resolver(Args... args) {
-                m_resolver = std::make_unique<dns::Resolver>(std::forward<Args...>(args)...);
+                m_resolver = std::make_unique<dns::Resolver>(std::forward<Args>(args)...);
                 return *m_resolver;
             }
             template<typename... Args>

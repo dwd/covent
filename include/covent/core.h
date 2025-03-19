@@ -14,6 +14,7 @@
 #include <covent/sockaddr-cast.h>
 #include <sigslot/sigslot.h>
 #include <openssl/types.h>
+#include <spdlog/logger.h>
 
 struct bufferevent;
 struct evconnlistener;
@@ -98,6 +99,8 @@ namespace covent {
         std::optional<task<std::size_t>> m_processor;
         sigslot::signal<> connected;
         sigslot::signal<> written;
+    protected:
+        std::shared_ptr<spdlog::logger> m_log;
     };
 }
 

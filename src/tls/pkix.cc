@@ -13,6 +13,10 @@
 #include <functional>
 #include <algorithm>
 #include "covent/pkix.h"
+
+#include <covent/app.h>
+#include <covent/service.h>
+
 #include "covent/covent.h"
 #include "covent/crl-cache.h"
 
@@ -170,25 +174,29 @@ EjhZjvPJOKqTisDI6g9A9ak87cfIh26eYj+vm5JOnjYltmaZ6U83AgEC
         }
     }
 
-//    int ssl_servername_cb(SSL *ssl, int *, void *) {
-//        const char *servername = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
-//        if (!servername) return SSL_TLSEXT_ERR_OK;
-//        SSL_CTX const * const old_ctx = SSL_get_SSL_CTX(ssl);
-//        SSL_CTX  * new_ctx = nullptr;
-//        std::string domain_name = servername; // Jid(servername).domain();
-//        if (auto const & domain = Config::config().domain(domain_name); domain.tls_enabled()) {
-//            auto &tls_context = domain.tls_context();
-//            new_ctx = tls_context.context();
-//        }
-//        if (!new_ctx) {
-//            auto const & any_domain = Config::config().domain("");
-//            if (any_domain.tls_enabled()) {
-//                new_ctx = any_domain.tls_context().context();
-//            }
-//        }
-//        if (new_ctx != old_ctx) SSL_set_SSL_CTX(ssl, new_ctx);
-//        return SSL_TLSEXT_ERR_OK;
-//    }
+
+    int service_exdata_index() {
+        static int index = -1;
+        if (index == -1) {
+            index = SSL_CTX_get_ex_new_index(0, nullptr, nullptr, nullptr, nullptr);
+        }
+        return index;
+    }
+
+
+    int ssl_servername_cb(SSL *ssl, int *, void *) {
+        const char *servername = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
+        if (!servername) return SSL_TLSEXT_ERR_OK;
+        SSL_CTX const * const old_ctx = SSL_get_SSL_CTX(ssl);
+        auto & service = *static_cast<covent::Service *>(SSL_CTX_get_ex_data(old_ctx, service_exdata_index()));
+        SSL_CTX  * new_ctx = nullptr;
+        std::string domain_name = servername; // Jid(servername).domain();
+        auto & entry = service.entry(domain_name);
+        auto & tls_context = entry.tls_context();
+        new_ctx = tls_context.context();
+        if (new_ctx != old_ctx) SSL_set_SSL_CTX(ssl, new_ctx);
+        return SSL_TLSEXT_ERR_OK;
+    }
 
     int verify_callback_cb(int preverify_ok, X509_STORE_CTX *st) {
         if (!preverify_ok) {
@@ -260,6 +268,7 @@ PKIXIdentity::PKIXIdentity(std::string const & cert_chain, std::string const & p
 }
 
 void PKIXIdentity::apply(SSL_CTX * ssl_ctx) const {
+    spdlog::default_logger()->info("Loading identity for cert {}", m_cert_chain_file);
     if (SSL_CTX_use_certificate_chain_file(ssl_ctx, m_cert_chain_file.c_str()) != 1) {
         for (unsigned long e = ERR_get_error(); e != 0; e = ERR_get_error()) {
             //            Config::config().logger().error("OpenSSL Error (chain): {}", ERR_reason_error_string(e));
@@ -278,9 +287,11 @@ void PKIXIdentity::apply(SSL_CTX * ssl_ctx) const {
         }
         throw pkix_config_error("Private key mismatch");
     }
+    spdlog::default_logger()->info("Loaded identity for cert {}", m_cert_chain_file);
 }
 
 PKIXValidator::PKIXValidator(Service & service, bool crls, bool use_system_trust) : m_service(service), m_enabled(true), m_crls(crls), m_system_trust(use_system_trust) {
+    m_log = Application::application().logger("PKIXValidator");
 }
 
 
@@ -316,7 +327,7 @@ covent::task<void> PKIXValidator::fetch_crls(const SSL *ssl, X509 *cert) {
                             const auto *uri = name->d.uniformResourceIdentifier;
                             std::string uristr{reinterpret_cast<char *>(uri->data),
                                                static_cast<std::size_t>(uri->length)};
-                            // m_log.info("verify_tls: Fetching CRL - {}", uristr);
+                            m_log->info("verify_tls: Fetching CRL - {}", uristr);
                             all_crls.insert(uristr);
                         }
                     }
@@ -329,7 +340,7 @@ covent::task<void> PKIXValidator::fetch_crls(const SSL *ssl, X509 *cert) {
     // no biggie.
     for (auto & uri : all_crls) {
         auto [uristr, code, crl] = co_await CrlCache::crl(uri);
-        // m_log.info("verify_tls: Fetched CRL - {}, with code {}", uri, code);
+        m_log->info("verify_tls: Fetched CRL - {}, with code {}", uri, code);
         if (!crl) continue;
         if (!X509_STORE_add_crl(store, crl)) {
             // Erm. Whoops? Probably doesn't matter.
@@ -352,7 +363,7 @@ covent::task<bool> PKIXValidator::verify_tls(SSL * ssl, std::string remote_domai
     if (!ssl) co_return false; // No TLS.
     auto *cert = SSL_get_peer_certificate(ssl);
     if (!cert) {
-        //m_log.info("verify_tls: No cert, so no auth");
+        m_log->info("verify_tls: No cert, so no auth");
         co_return false;
     }
     if (X509_V_OK != SSL_get_verify_result(ssl)) {
@@ -370,12 +381,12 @@ covent::task<bool> PKIXValidator::verify_tls(SSL * ssl, std::string remote_domai
     }
     X509_VERIFY_PARAM_set1_host(vpm, remote_domain.c_str(), remote_domain.size());
     // Add RFC 6125 additional names.
-//    auto & domain = Config::config().domain(remote_domain);
-//    auto gathered = co_await domain.gather(span->start_child("gather", remote_domain));
-//    for (auto const &host : gathered.gathered_hosts) {
-//        m_log.debug("Adding gathered hostname {}", host);
-//        X509_VERIFY_PARAM_add1_host(vpm, host.c_str(), host.size());
-//    }
+    auto & entry = m_service.entry(remote_domain);
+    auto gathered = co_await entry.discovery(remote_domain);
+    for (auto const &host : gathered.gathered_hosts) {
+        m_log->debug("Adding gathered hostname {}", host);
+        X509_VERIFY_PARAM_add1_host(vpm, host.c_str(), host.size());
+    }
     auto *st = X509_STORE_CTX_new();
     if (!m_trust_blobs.empty()) {
         store = free_store = X509_STORE_new();
@@ -385,33 +396,33 @@ covent::task<bool> PKIXValidator::verify_tls(SSL * ssl, std::string remote_domai
     }
     X509_STORE_CTX_set0_param(st, vpm); // Hands ownership to st.
     // Fun fact: We can only add these to SSL_DANE via the connection.
-//    for (auto const & rr : gathered.gathered_tlsa) {
-//        m_log.debug("Adding TLSA {} / {} / {} with {} bytes of match data", rr.certUsage, rr.selector, rr.matchType, rr.matchData.length());
-//        if (0 == SSL_dane_tlsa_add(ssl,
-//                                   std::to_underlying(rr.certUsage),
-//                                   std::to_underlying(rr.selector),
-//                                   std::to_underlying(rr.matchType),
-//                                   reinterpret_cast<const unsigned char *>(rr.matchData.data()), rr.matchData.length())) {
-//            m_log.warn("TLSA record rejected");
-//        }
-//    }
+    for (auto const & rr : gathered.gathered_tlsa) {
+        // m_log->debug("Adding TLSA {} / {} / {} with {} bytes of match data", rr.certUsage, rr.selector, rr.matchType, rr.matchData.length());
+        if (0 == SSL_dane_tlsa_add(ssl,
+                                   std::to_underlying(rr.certUsage),
+                                   std::to_underlying(rr.selector),
+                                   std::to_underlying(rr.matchType),
+                                   reinterpret_cast<const unsigned char *>(rr.matchData.data()), rr.matchData.length())) {
+            m_log->warn("TLSA record rejected");
+        }
+    }
     X509_STORE_CTX_init(st, store, cert, chain);
     X509_STORE_CTX_set0_dane(st, SSL_get0_dane(ssl));
     X509_STORE_CTX_set_verify_cb(st, reverify_callback);
-//    m_log.info("Reverification for {}", remote_domain);
+    m_log->info("Reverification for {}", remote_domain);
     bool valid = (X509_verify_cert(st) == 1);
     if (valid) {
-//        if (gathered.gathered_tlsa.empty()) {
-//            m_log.info("verify_tls: PKIX verification succeeded");
-//        } else {
-//            m_log.info("verify_tls: DANE verification succeeded");
-//        }
+        if (gathered.gathered_tlsa.empty()) {
+            m_log->info("verify_tls: PKIX verification succeeded");
+        } else {
+            m_log->info("verify_tls: DANE verification succeeded");
+        }
     } else {
         auto error = X509_STORE_CTX_get_error(st);
         auto depth = X509_STORE_CTX_get_error_depth(st);
         std::array<char, 1024> buf = {};
-//        m_log.warn("verify_tls: Chain failed validation: {} (at depth {})", ERR_error_string(error, buf.data()),
-//                             depth);
+        m_log->warn("verify_tls: Chain failed validation: {} (at depth {})", ERR_error_string(error, buf.data()),
+                             depth);
     }
     X509_STORE_CTX_free(st);
     if (free_store) X509_STORE_free(free_store);
@@ -436,6 +447,7 @@ void PKIXValidator::add_trust_anchor(std::string const & filename){
 }
 
 TLSContext::TLSContext(Service & service, bool enabled, bool validation, std::string const & domain) : m_service(service), m_enabled(enabled), m_validation(validation), m_domain(domain) {
+    m_log = Application::application().logger("TLSContext '{}'", domain);
     if (m_enabled) {
         m_dhparam = "auto";
         m_cipherlist = "HIGH:!3DES:!eNULL:!aNULL:@STRENGTH"; // Apparently 3DES qualifies for HIGH, but is 112 bits, which the IM Observatory marks down for.
@@ -458,6 +470,7 @@ SSL * TLSContext::instantiate(bool connecting, std::string const & domain) {
     if (!ssl) throw pkix_error("Failure to initiate TLS, sorry!");
     SSL_dane_enable(ssl, domain.c_str());
     // Cipherlist
+    m_log->info("Setting cipherlist {}", m_cipherlist);
     SSL_set_cipher_list(ssl, m_cipherlist.c_str());
     // Min / max TLS versions.
     if (m_min_version != 0) {
@@ -492,10 +505,11 @@ SSL * TLSContext::instantiate(bool connecting, std::string const & domain) {
     return ssl;
 }
 
-
 SSL_CTX * TLSContext::context() {
+    m_log->info("Getting SSL_CTX");
     if (!m_enabled) return nullptr;
     if (m_ssl_ctx) {
+        m_log->info("Using cached SSL_CTX");
         return m_ssl_ctx;
     }
     m_ssl_ctx = SSL_CTX_new(TLS_method());
@@ -507,10 +521,12 @@ SSL_CTX * TLSContext::context() {
     } else {
         SSL_CTX_set_verify(m_ssl_ctx, SSL_VERIFY_NONE, verify_callback_cb);
     }
-
+    m_log->info("Adding {} identities", m_identities.size());
     for (auto & identity : m_identities) {
+        m_log->info("Adding identity");
         identity->apply(m_ssl_ctx);
     }
+    m_log->info("Done");
 
     SSL_CTX_set_purpose(m_ssl_ctx, X509_PURPOSE_SSL_SERVER);
 //    if(SSL_CTX_set_default_verify_paths(m_ssl_ctx) == 0) {
@@ -520,15 +536,16 @@ SSL_CTX * TLSContext::context() {
 //            m_log.error("OpenSSL Error (default_verify_paths): {}", ERR_reason_error_string(e));
         }
     }
-    // SSL_CTX_set_tlsext_servername_callback(m_ssl_ctx, ssl_servername_cb);
+    SSL_CTX_set_ex_data(m_ssl_ctx, service_exdata_index(), &m_service);
+    SSL_CTX_set_tlsext_servername_callback(m_ssl_ctx, ssl_servername_cb);
     std::string ctx = "Metre::" + m_domain;
     SSL_CTX_set_session_id_context(m_ssl_ctx, reinterpret_cast<const unsigned char *>(ctx.c_str()),
                                    static_cast<unsigned int>(ctx.size()));
     return m_ssl_ctx;
 }
 
-bool TLSContext::enabled() {
-    return context() != nullptr;
+bool TLSContext::enabled() const {
+    return m_enabled;
 }
 
 void TLSContext::add_identity(std::unique_ptr<PKIXIdentity> &&identity) {

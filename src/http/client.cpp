@@ -3,7 +3,6 @@
 //
 
 
-#include <iostream>
 #include <covent/app.h>
 #include <covent/http.h>
 #include <covent/loop.h>
@@ -23,7 +22,7 @@ public:
 
     covent::task<unsigned long> process(std::string_view data) override {
         if (!message) {
-            std::cout << "Data arrived before I was ready?" << std::endl;
+            m_log->debug("Data arrived before I was ready?");
             co_return 0;
         }
         auto tmp = message->process(data);
@@ -59,20 +58,14 @@ covent::task<std::shared_ptr<Client::HTTPSession>> Client::connect(covent::dns::
     auto session = std::make_shared<HTTPSession>(m_loop); // Don't add it to the loop yet!
     auto & tls_context = m_service.entry(uri.host).tls_context();
     auto & validator = m_service.entry(uri.host).validator();
-    std::cerr << "Connect loop start" << std::endl;
     for (auto & s : address.addr) {
         try {
             covent::sockaddr_cast<AF_INET6>(&s)->sin6_port = htons(uri.port.value());
             co_await session->connect(&s);
-            std::cerr << "Connected" << std::endl;
             if (ssl) {
-                std::cerr << "SSL start" << std::endl;
                 co_await session->ssl(tls_context.instantiate(true, uri.host), true);
-                std::cerr << "SSL end" << std::endl;
                 co_await validator.verify_tls(session->ssl(), uri.host);
-                std::cerr << "SSL validation" << std::endl;
             }
-            std::cerr << "Session ready" << std::endl;
             success = true;
             break;
         } catch (std::runtime_error &) {
@@ -88,7 +81,6 @@ covent::task<std::shared_ptr<Client::HTTPSession>> Client::connect(covent::dns::
 }
 
 covent::task<std::shared_ptr<Client::HTTPSession>> Client::connect_v4(URI const & uri) const {
-    std::cerr << "Here -- v4" << std::endl;
     auto & resolver = m_service.entry(uri.host).resolver();
     co_return co_await connect(co_await resolver.address_v4(uri.host), uri);
 }
