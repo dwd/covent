@@ -313,9 +313,12 @@ void Resolver::inject(answers::Address const & address) {
             break;
         }
     }
+    m_a4 = std::make_unique<answers::Address>(address);
     if (has4) {
-        m_a4 = std::make_unique<answers::Address>(address);
-        m_a4->addr.erase(std::remove_if(m_a4->addr.begin(), m_a4->addr.end(), [](auto & x) { return x.ss_family != AF_INET; }));
+        std::erase_if(m_a4->addr, [](auto & x) { return x.ss_family != AF_INET; });
+    } else {
+        m_a4->addr.clear();
+        m_a4->error = "None provided in inject";
     }
     bool has6 = false;
     for (auto const & a : address.addr) {
@@ -324,9 +327,12 @@ void Resolver::inject(answers::Address const & address) {
             break;
         }
     }
+    m_a6 = std::make_unique<answers::Address>(address);
     if (has6) {
-        m_a6 = std::make_unique<answers::Address>(address);
-        m_a6->addr.erase(std::remove_if(m_a6->addr.begin(), m_a6->addr.end(), [](auto & x) { return x.ss_family != AF_INET6; }));
+        std::erase_if(m_a6->addr, [](auto & x) { return x.ss_family != AF_INET6; });
+    } else {
+        m_a6->addr.clear();
+        m_a6->error = "None provided in inject";
     }
 }
 

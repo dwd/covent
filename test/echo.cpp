@@ -112,6 +112,16 @@ namespace echo {
             co_await flush(echo::test_data);
         }
 
+        covent::task<void> normal_echo_two(unsigned short port) {
+            struct sockaddr_in6 sin6 {
+                    .sin6_family = AF_INET6,
+                    .sin6_port = htons(port),
+                    .sin6_addr = IN6ADDR_LOOPBACK_INIT,
+            };
+            co_await connect(&sin6);
+            co_await flush(echo::test_data + "\r\n");
+        }
+
         covent::task<void> slow_echo(unsigned short port) {
             struct sockaddr_in6 sin6 {
                     .sin6_family = AF_INET6,
@@ -197,6 +207,37 @@ TEST(Echo, listen_line) {
         serverLoop.run();
     }
     EXPECT_EQ(echo::test_data, echo::data_rx_server);
+    EXPECT_EQ("This is the data I'm going to send\r\n", echo::data_rx_client);
+}
+
+
+TEST(Echo, listen_line_two) {
+    {
+        echo::data_rx_server = "";
+        echo::data_rx_client = "";
+        covent::Loop serverLoop;
+        covent::Listener<echo::LineServerSession> listener(serverLoop, "::1", 2009);
+        serverLoop.listen(listener);
+        std::jthread foo{
+                [&serverLoop]() {
+                    try {
+                        std::cout << "Thread..." << std::endl;
+                        covent::Loop clientLoop;
+                        auto cl = std::dynamic_pointer_cast<echo::ClientSession>(clientLoop.add(std::make_shared<echo::ClientSession>(clientLoop, serverLoop)));
+                        clientLoop.run_task(cl->normal_echo_two(2009));
+                        clientLoop.run();
+                        std::cout << "Probably written?" << std::endl;
+                    } catch (std::exception &e) {
+                        std::cout << "Boom: " << e.what() << std::endl;
+                    } catch (...) {
+                        std::cout << "Big boom" << std::endl;
+                    }
+                }
+        };
+        std::cout << "Main loop start" << std::endl;
+        serverLoop.run();
+    }
+    EXPECT_EQ(echo::test_data + "\r\n", echo::data_rx_server);
     EXPECT_EQ("This is the data I'm going to send\r\n", echo::data_rx_client);
 }
 

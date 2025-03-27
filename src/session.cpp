@@ -107,6 +107,7 @@ void covent::Session::read_cb(struct bufferevent *) {
     // We'll try first using whatever contiguous data we have to hand:
     size_t len;
     struct evbuffer *buf = bufferevent_get_input(m_top);
+    m_log->trace("Contiguous data mode");
     while ((len = evbuffer_get_contiguous_space(buf)) > 0) {
         try {
             m_processor.emplace(process({reinterpret_cast<char *>(evbuffer_pullup(buf, static_cast<ssize_t>(len))), len}));
@@ -133,8 +134,10 @@ void covent::Session::read_cb(struct bufferevent *) {
     buf = bufferevent_get_input(m_top);
     if (evbuffer_get_contiguous_space(buf) == evbuffer_get_length(buf)) {
         // No need to retry.
+        m_log->trace("No data left");
         return;
     }
+    m_log->trace("All data mode");
     while ((len = evbuffer_get_length(buf)) > 0) {
         try {
             m_processor.emplace(process({reinterpret_cast<char *>(evbuffer_pullup(buf, -1)), len}));

@@ -252,6 +252,7 @@ generator_async<ConnectInfo> Service::Entry::xmpp_lookup(std::string const domai
         if (ipv6.error.empty()) {
             for (auto const & a : ipv6.addr) {
                 connect_info.sockaddr = a;
+                sockaddr_cast<AF_INET6>(&connect_info.sockaddr)->sin6_port = htons(rr.port);
                 co_yield connect_info;
             }
         }
@@ -259,6 +260,7 @@ generator_async<ConnectInfo> Service::Entry::xmpp_lookup(std::string const domai
         if (ipv4.error.empty()) {
             for (auto const & a : ipv4.addr) {
                 connect_info.sockaddr = a;
+                sockaddr_cast<AF_INET>(&connect_info.sockaddr)->sin_port = htons(rr.port);
                 co_yield connect_info;
             }
         }

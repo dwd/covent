@@ -53,6 +53,7 @@ GTEST_TEST(SService, gather) {
     covent::Loop loop;
     covent::Service serv;
     serv.add("");
+    serv.add("dave.cridland.net");
     // PKIX discovery, so no names/TLSA expected from DNS due to no DNSSEC.
     {
         auto [gathered_hosts, gathered_tlsa] = loop.run_task(serv.entry("dave.cridland.net").discovery("dave.cridland.net"));
@@ -63,14 +64,14 @@ GTEST_TEST(SService, gather) {
     faked.dnssec = true;
     faked.rrs.emplace_back(
         "dave.cridland.net",
-        5269,
+        111,
         1,
         1,
         "xmpp-server"
     );
     faked.rrs.emplace_back(
         "dave.cridland.net",
-        5270,
+        222,
         1,
         0,
         "xmpps-server"
@@ -86,12 +87,25 @@ GTEST_TEST(SService, gather) {
         bool start = true;
         for (auto it = co_await srv_gen.begin(); it != srv_gen.end(); co_await ++it) {
             if (start) {
-                EXPECT_EQ((*it).port, 5270);
+                EXPECT_EQ((*it).port, 222);
                 start = false;
             } else {
-                EXPECT_EQ((*it).port, 5269);
+                EXPECT_EQ((*it).port, 111);
             }
         }
     };
     loop.run_task(fn());
+    // auto const & fn2 = [&serv]() -> covent::task<void> {
+    //     auto srv_gen = serv.entry("dave.cridland.net").xmpp_lookup("dave.cridland.net");
+    //     bool start = true;
+    //     for (auto it = co_await srv_gen.begin(); it != srv_gen.end(); co_await ++it) {
+    //         if (start) {
+    //             EXPECT_EQ((*it).port, 222);
+    //             start = false;
+    //         } else {
+    //             EXPECT_EQ((*it).port, 222);
+    //         }
+    //     }
+    // };
+    // loop.run_task(fn2());
 }

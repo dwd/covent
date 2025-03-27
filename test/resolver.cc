@@ -56,3 +56,38 @@ TEST(Resolver, faked_data) {
     EXPECT_EQ(result.addr.size(), 1);
     EXPECT_EQ(covent::address_tostring(&result.addr[0]), "127.127.127.127");
 }
+
+TEST(Resolver, inject) {
+    covent::Loop loop;
+    covent::dns::Resolver res{false};
+    covent::dns::rr::SRV srv_rr = {
+        "test.foo.example",
+        12,
+        13,
+        14,
+        "foo"
+    };
+    covent::dns::answers::SRV srv = {
+        {
+            srv_rr
+        },
+        "foo.example",
+        true,
+        ""
+    };
+    res.inject(srv);
+    {
+        auto result = loop.run_task(res.srv("foo", "foo.example"));
+        ASSERT_NE(result.rrs.size(), 0);
+        EXPECT_EQ(result.rrs[0].port, 12);
+    }
+    {
+        auto result = loop.run_task(res.srv("not-foo", "foo.example"));
+        EXPECT_NE(result.error, "");
+    }
+    {
+        auto result = loop.run_task(res.srv("foo", "dave.cridland.net"));
+        ASSERT_NE(result.rrs.size(), 0);
+        EXPECT_EQ(result.rrs[0].port, 12);
+    }
+}
