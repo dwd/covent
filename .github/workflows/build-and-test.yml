@@ -10,20 +10,16 @@ jobs:
         with:
           submodules: true
           fetch-depth: 0
-      - uses: actions/checkout@v4
-        with:
-          repository: getsentry/sentry-native
-          path: sentry-native
-      - uses: actions/checkout@v4
-        with:
-          repository: dwd/sigslot
-          path: sigslot
-      - name: Apt dance
-        run: sudo apt-get update
-      - name: Install dependencies
-        run: sudo make apt-deps
-      - name: And also libcurl
-        run: sudo apt-get install libcurl4-openssl-dev
+      - name: Figure out version
+        id: tag
+        run: |
+          TAG=$(git describe --tags --abbrev=0)
+          COMMITS_SINCE_TAG=$(git rev-list ${TAG}..HEAD --count)
+          if [ "${COMMITS_SINCE_TAG}" -eq 0 ]; then
+            echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          else
+            echo "VERSION="$(git describe --tags --abbrev=8) >> $GITHUB_ENV
+          fi
       - name: Set up Python 3.8 for gcovr
         uses: actions/setup-python@v4
         with:
@@ -33,8 +29,28 @@ jobs:
           pip install gcovr==5.0 # 5.1 is not supported
       - name: SonarQube install
         uses: SonarSource/sonarcloud-github-c-cpp@v3
+      - name: Cache Conan2 dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.conan2
+          key: ${{ runner.os }}-conan2-${{ hashFiles('**/conanfile.py') }}
+          restore-keys: |
+            ${{ runner.os }}-conan2-
+      - name: Install Conan
+        run: pip install conan
+      - name: Configure Conan Profile
+        run: |
+          conan profile detect -e
+          conan remote add conan-nexus https://nexus.cridland.io/repository/dwd-conan --force
+          conan remote login conan-nexus ci --password ${{ secrets.NEXUS_PASSWORD }}
+      - name: Conan Deps Debug
+        run: conan install . --output-folder=gh-build -s build_type=Debug -s compiler.cppstd=gnu23  -b missing --version=${{ env.VERSION }}
+      - name: Conan Deps Release
+        run: conan install . --output-folder=gh-build -s build_type=Release -s compiler.cppstd=gnu23  -b missing --version=${{ env.VERSION }}
+      - name: Conan Deps RelWithDebInfo
+        run: conan install . --output-folder=gh-build -s build_type=RelWithDebInfo -s compiler.cppstd=gnu23  -b missing --version=${{ env.VERSION }}
       - name: Configure Sonar Build
-        run: mkdir sonar-build && cmake -S . -B sonar-build -DCOVENT_SENTRY=ON -DCOVENT_BUILD_TESTS=ON -DCOVENT_SIGSLOT_INCLUDE=sigslot -DCOVENT_COVERAGE=ON
+        run: mkdir sonar-build && cmake -S . -B sonar-build -DCOVENT_SENTRY=ON -DCOVENT_BUILD_TESTS=ON -DCOVENT_COVERAGE=ON  -DCMAKE_PROJECT_TOP_LEVEL_INCLUDES="gh-build/conan_provider.cmake" -DCMAKE_BUILD_TYPE=Debug
       - name: Build Wrapper
         run: build-wrapper-linux-x86-64 --out-dir sonar-out cmake --build sonar-build
       - name: CMake Tests
@@ -50,3 +66,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      - name: Create Debug package
+        run: conan create . -s build_type=Debug -s compiler.cppstd=gnu23  --version=${{ env.VERSION }}
+      - name: Create Debug package
+        run: conan create . -s build_type=Debug -s compiler.cppstd=gnu23  --version=${{ env.VERSION }}
+      - name: Create Debug package
+        run: conan create . -s build_type=Debug -s compiler.cppstd=gnu23  --version=${{ env.VERSION }}
+      - name: Conan upload
+        run: conan upload -r conan-nexus --confirm 'covent/*'
