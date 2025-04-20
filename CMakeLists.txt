@@ -70,9 +70,7 @@ install(EXPORT coventTargets FILE covent.cmake NAMESPACE covent:: DESTINATION li
 export(EXPORT coventTargets NAMESPACE covent:: FILE "${CMAKE_CURRENT_BINARY_DIR}/covent.cmake")
 
 if(COVENT_COVERAGE)
-    target_link_options(covent_static PUBLIC --coverage)
     target_link_options(covent PUBLIC --coverage)
-    target_compile_options(covent_static PUBLIC --coverage)
     target_compile_options(covent PUBLIC --coverage)
 endif()
 
