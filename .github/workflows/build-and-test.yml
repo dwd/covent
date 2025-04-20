@@ -2,6 +2,7 @@ name: Build and Test
 on:
   - push
   - pull_request
+  - release
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -33,7 +34,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ~/.conan2
-          key: ${{ runner.os }}-conan2-${{ hashFiles('**/conanfile.py') }}
+          key: ${{ runner.os }}-conan2-${{ hashFiles('**/conanfile.py') }}-${{ hashFiles('**/conandata.yml') }}
           restore-keys: |
             ${{ runner.os }}-conan2-
       - name: Install Conan
