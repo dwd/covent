@@ -80,18 +80,18 @@ if(COVENT_BUILD_TESTS)
     enable_testing()
 
     add_executable(covent-test
-            test/basic.cpp
-            test/main.cpp
-            test/coro.cpp
-            test/echo.cpp
-            test/http.cpp
-            test/dns-utils.cc
-            test/resolver.cc
-            test/crls.cpp
-            test/app.cpp
-            test/service.cpp
-            test/http-session.cpp
-            test/uri.cpp
+            test/src/basic.cpp
+            test/src/main.cpp
+            test/src/coro.cpp
+            test/src/echo.cpp
+            test/src/http.cpp
+            test/src/dns-utils.cc
+            test/src/resolver.cc
+            test/src/crls.cpp
+            test/src/app.cpp
+            test/src/service.cpp
+            test/src/http-session.cpp
+            test/src/uri.cpp
     )
     target_include_directories(covent-test SYSTEM PUBLIC include)
     target_link_libraries(covent-test PUBLIC covent::covent GTest::gtest)

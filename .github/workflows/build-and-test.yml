@@ -17,7 +17,7 @@ jobs:
           TAG=$(git describe --tags --abbrev=0)
           COMMITS_SINCE_TAG=$(git rev-list ${TAG}..HEAD --count)
           if [ "${COMMITS_SINCE_TAG}" -eq 0 ]; then
-            echo "VERSION=${VERSION}" >> $GITHUB_ENV
+            echo "VERSION=${TAG}" >> $GITHUB_ENV
           else
             echo "VERSION="$(git describe --tags --abbrev=8) >> $GITHUB_ENV
           fi
@@ -49,9 +49,9 @@ jobs:
       - name: Conan Deps RelWithDebInfo
         run: conan install . -s build_type=RelWithDebInfo -s compiler.cppstd=gnu23  -b missing --version=${{ env.VERSION }}
       - name: Conan Deps Debug
-        run: conan install . -s build_type=Debug -s compiler.cppstd=gnu23  -b missing --version=${{ env.VERSION }}
+        run: conan install . -o tests=True -s build_type=Debug -s compiler.cppstd=gnu23  -b missing --version=${{ env.VERSION }}
       - name: Configure Sonar Build
-        run: mkdir sonar-build && cmake -S . -B sonar-build -DCOVENT_SENTRY=ON -DCOVENT_BUILD_TESTS=ON -DCOVENT_COVERAGE=ON  -DCMAKE_PROJECT_TOP_LEVEL_INCLUDES="conan_provider.cmake" -DCMAKE_BUILD_TYPE=Debug
+        run: mkdir sonar-build && cmake -S . -B sonar-build -DCOVENT_BUILD_TESTS=ON -DCOVENT_COVERAGE=ON  -DCMAKE_PROJECT_TOP_LEVEL_INCLUDES="conan_provider.cmake" -DCMAKE_BUILD_TYPE=Debug
       - name: Build Wrapper
         run: build-wrapper-linux-x86-64 --out-dir sonar-out cmake --build sonar-build
       - name: CMake Tests

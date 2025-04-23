@@ -4,9 +4,10 @@
 requirements:
   - "icu/76.1"
   - "libevent/2.1.12"
-  - "sigslot/1.0.1@dwd/metre"
-  - "unbound/1.22.0@dwd/metre"
+  - "st-sigslot/1.0.1"
+  - "unbound/1.22.0"
   - "openssl/[>=3.3.0 <4]"
   - "spdlog/1.14.1"
   - "fmt/10.2.1"
   - "yaml-cpp/0.8.0"
+  - "sentry-native/0.7.11"
