@@ -33,3 +33,9 @@ You can do more fun than that - like open a TCP session to somewhere with `loop.
 And if you needed TLS, then of course there's a PKIX validator that's similarly tunable. And why yes, it will chase down DNSSEC records to add additional names, and fetch CRLs asynchronously, and ...
 
 HTTP? Yes, there's an HTTP/1.1 library included, both server and client. The server is modelled as endpoints and middleware, so should be vaguely familiar to people who've seen Express.
+
+# Consuming
+
+Covent is built with, and intended to be consumed with, Conan 2.
+
+I do run a Conan repository with it in, at https://nexus.cridland.io/

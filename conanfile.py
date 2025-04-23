@@ -4,19 +4,16 @@ from conan.tools.build import check_min_cppstd
 
 class ConanApplication(ConanFile):
     name = "covent"
-    version = "0.1.25"
     email = "Dave Cridland <dave@cridland.net>"
     package_type = "library"
     settings = "os", "compiler", "build_type", "arch"
 
     options = {
         "tests": [True, False],
-        "sentry": [True, False],
         "shared": [True, False],
     }
     default_options = {
-        "tests": True,
-        "sentry": True,
+        "tests": False,
         "shared": False,
     }
 
@@ -32,14 +29,12 @@ class ConanApplication(ConanFile):
         deps = CMakeDeps(self)
         deps.generate()
         tc = CMakeToolchain(self)
-        tc.variables["COVENT_SENTRY"] = self.options.sentry
         tc.variables["COVENT_BUILD_TESTS"] = self.options.tests
         tc.user_presets_path = False
         tc.generate()
 
     def configure(self):
-        if self.options.sentry:
-            self.options["sentry-native"].backend = "inproc"
+        self.options["sentry-native"].backend = "inproc"
 
     def build(self):
         tc = CMake(self)
@@ -50,8 +45,6 @@ class ConanApplication(ConanFile):
         requirements = self.conan_data.get('requirements', [])
         for requirement in requirements:
             self.requires(requirement)
-        if self.options.sentry:
-            self.requires("sentry-native/0.7.11")
         if self.options.tests:
             self.requires("gtest/1.12.1")
 

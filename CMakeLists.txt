@@ -10,7 +10,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 find_package(sentry)
 find_package(sentry-native)
 find_package(Libevent)
-find_package(SigSlot)
+find_package(st-sigslot)
 find_package(unbound)
 find_package(ICU)
 find_package(OpenSSL)
@@ -61,7 +61,7 @@ target_include_directories(covent PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>  # <prefix>/ include/ mylib
 )
-target_link_libraries(covent PUBLIC libevent::libevent sigslot::sigslot unbound::unbound ICU::uc ICU::i18n OpenSSL::SSL OpenSSL::Crypto fmt::fmt spdlog::spdlog sentry-native::sentry-native)
+target_link_libraries(covent PUBLIC libevent::libevent st-sigslot::st-sigslot unbound::unbound ICU::uc ICU::i18n OpenSSL::SSL OpenSSL::Crypto fmt::fmt spdlog::spdlog sentry-native::sentry-native)
 set_target_properties(covent PROPERTIES EXPORT_NAME covent)
 
 install(DIRECTORY include/covent TYPE INCLUDE)
@@ -70,9 +70,7 @@ install(EXPORT coventTargets FILE covent.cmake NAMESPACE covent:: DESTINATION li
 export(EXPORT coventTargets NAMESPACE covent:: FILE "${CMAKE_CURRENT_BINARY_DIR}/covent.cmake")
 
 if(COVENT_COVERAGE)
-    target_link_options(covent_static PUBLIC --coverage)
     target_link_options(covent PUBLIC --coverage)
-    target_compile_options(covent_static PUBLIC --coverage)
     target_compile_options(covent PUBLIC --coverage)
 endif()
 
@@ -82,18 +80,18 @@ if(COVENT_BUILD_TESTS)
     enable_testing()
 
     add_executable(covent-test
-            test/basic.cpp
-            test/main.cpp
-            test/coro.cpp
-            test/echo.cpp
-            test/http.cpp
-            test/dns-utils.cc
-            test/resolver.cc
-            test/crls.cpp
-            test/app.cpp
-            test/service.cpp
-            test/http-session.cpp
-            test/uri.cpp
+            test/src/basic.cpp
+            test/src/main.cpp
+            test/src/coro.cpp
+            test/src/echo.cpp
+            test/src/http.cpp
+            test/src/dns-utils.cc
+            test/src/resolver.cc
+            test/src/crls.cpp
+            test/src/app.cpp
+            test/src/service.cpp
+            test/src/http-session.cpp
+            test/src/uri.cpp
     )
     target_include_directories(covent-test SYSTEM PUBLIC include)
     target_link_libraries(covent-test PUBLIC covent::covent GTest::gtest)
