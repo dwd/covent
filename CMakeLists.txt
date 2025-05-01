@@ -61,7 +61,9 @@ target_include_directories(covent PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>  # <prefix>/ include/ mylib
 )
-target_link_libraries(covent PUBLIC libevent::libevent st-sigslot::st-sigslot unbound::unbound ICU::uc ICU::i18n OpenSSL::SSL OpenSSL::Crypto fmt::fmt spdlog::spdlog sentry-native::sentry-native)
+target_link_libraries(covent
+        PUBLIC libevent::libevent st-sigslot::st-sigslot ICU::uc ICU::i18n OpenSSL::SSL OpenSSL::Crypto fmt::fmt spdlog::spdlog sentry-native::sentry-native
+        PRIVATE unbound::unbound)
 set_target_properties(covent PROPERTIES EXPORT_NAME covent)
 
 install(DIRECTORY include/covent TYPE INCLUDE)
