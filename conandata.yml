@@ -4,7 +4,7 @@
 requirements:
   - "icu/76.1"
   - "libevent/2.1.12"
-  - "st-sigslot/1.0.1"
+  - "st-sigslot/1.2.0"
   - "unbound/1.22.0"
   - "openssl/[>=3.0.0 <4]"
   - "spdlog/1.14.1"

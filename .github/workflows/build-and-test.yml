@@ -51,7 +51,7 @@ jobs:
       - name: Conan Deps Debug
         run: conan install . -o tests=True -s build_type=Debug -s compiler.cppstd=gnu23  -b missing --version=${{ env.VERSION }}
       - name: Configure Sonar Build
-        run: mkdir sonar-build && cmake -S . -B sonar-build -DCOVENT_BUILD_TESTS=ON -DCOVENT_COVERAGE=ON  -DCMAKE_PROJECT_TOP_LEVEL_INCLUDES="conan_provider.cmake" -DCMAKE_BUILD_TYPE=Debug
+        run: mkdir sonar-build && cmake -S . -B sonar-build -DCOVENT_BUILD_TESTS=ON -DCOVENT_COVERAGE=ON  -DCMAKE_PROJECT_TOP_LEVEL_INCLUDES="conan_provider.cmake" -DCMAKE_BUILD_TYPE=Debug -DCONAN_INSTALL_ARGS="-o=tests=True;--settings=compiler.cppstd=gnu23;--build=missing;--version=${{ env.VERSION }}"
       - name: Build Wrapper
         run: build-wrapper-linux-x86-64 --out-dir sonar-out cmake --build sonar-build
       - name: CMake Tests
