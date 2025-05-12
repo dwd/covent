@@ -3,6 +3,7 @@ project(covent)
 option(COVENT_BUILD_TESTS "Build the Covent tests" OFF)
 option(COVENT_SENTRY "Use Sentry (also for tests)" OFF)
 option(COVENT_COVERAGE "Coverage support on library and tests" OFF)
+option(BUILD_SHARED_LIBS "Build shared libraries instead of static" OFF)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
@@ -55,7 +56,7 @@ set(COVENT_SOURCES
         src/sentry-wrap.cc
 )
 
-add_library(covent STATIC ${COVENT_SOURCES})
+add_library(covent ${COVENT_SOURCES})
 add_library(covent::covent ALIAS covent)
 target_include_directories(covent PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
