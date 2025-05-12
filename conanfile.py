@@ -15,6 +15,7 @@ class ConanApplication(ConanFile):
     default_options = {
         "tests": False,
         "shared": False,
+        "unbound/*:shared": False,
     }
 
     exports_sources = "src/*", "CMakeLists.txt", "include/*", "test/*"
@@ -30,11 +31,16 @@ class ConanApplication(ConanFile):
         deps.generate()
         tc = CMakeToolchain(self)
         tc.variables["COVENT_BUILD_TESTS"] = self.options.tests
+        tc.variables["BUILD_SHARED_LIBS"] = self.options.shared
         tc.user_presets_path = False
         tc.generate()
 
     def configure(self):
         self.options["sentry-native"].backend = "inproc"
+        if self.options.shared:
+            for dep in 'openssl', 'yaml-cpp', 'sentry-native', 'libevent', 'icu':
+                self.options[dep].shared = True
+
 
     def build(self):
         tc = CMake(self)
