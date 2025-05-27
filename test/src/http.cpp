@@ -101,6 +101,33 @@ TEST(HTTP_Server, Path) {
     }
 }
 
+TEST(HTTP_Server, ExplicitClient) {
+    covent::Loop loop;
+    covent::http::Server srv(8001, false);
+    srv.add(std::make_unique<covent::http::Endpoint>("/"));
+    srv.add(std::make_unique<covent::http::Endpoint>("/test", [](evhttp_request * req) -> covent::task<int> {
+        evhttp_send_reply(req, 201, "OK", nullptr);
+        co_return 201;
+    }));
+    covent::Service service;
+    covent::http::Client client{service, "http://localhost:8001/"};
+    {
+        auto req = client.request(covent::http::Method::GET, "http://localhost:8001/");
+        auto resp = loop.run_task(req());
+        EXPECT_EQ(resp->status(), 404);
+    }
+    {
+        auto req = client.request(covent::http::Method::GET, "http://localhost:8001/not-found");
+        auto resp = loop.run_task(req());
+        EXPECT_EQ(resp->status(), 404);
+    }
+    {
+        auto req = client.request(covent::http::Method::GET, "http://localhost:8001/test");
+        auto resp = loop.run_task(req());
+        EXPECT_EQ(resp->status(), 201);
+    }
+}
+
 TEST(HTTP_Server, Middleware) {
     covent::Loop loop;
     covent::http::Server srv(8001, false);

@@ -69,7 +69,9 @@ Server::Server(unsigned short port, bool tls) {
 		entry.make_tls_context(false, false, "");
 	}
     m_server = evhttp_new(loop.event_base());
-    evhttp_bind_socket(m_server, "::1", port);
+    if (0 != evhttp_bind_socket(m_server, "::", port)) {
+	    throw std::runtime_error(std::strerror(errno));
+    }
     evhttp_set_bevcb(m_server, bufferevent_cb, this);
     evhttp_set_gencb(m_server, request_cb, this);
 }
