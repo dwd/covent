@@ -101,6 +101,28 @@ TEST(HTTP_Server, Path) {
     }
 }
 
+TEST(HTTP_Server, PathVars) {
+    covent::Loop loop;
+    covent::http::Server srv(8001, false);
+    srv.add(std::make_unique<covent::http::Endpoint>("/"));
+    srv.add(std::make_unique<covent::http::Endpoint>("/test", [](evhttp_request * req) -> covent::task<int> {
+        evhttp_send_reply(req, 201, "OK", nullptr);
+        co_return 201;
+    }));
+    srv.add(std::make_unique<covent::http::Endpoint>("/test/{variable}", [](evhttp_request * req, std::unordered_map<std::string, std::string> const& params) -> covent::task<int> {
+        int ret = 200;
+        if (params.find("variable") == params.end()) ret = 500;
+        if (params.find("variable")->second != "value") ret = 418;
+        evhttp_send_reply(req, 200, "OK", nullptr);
+        co_return ret;
+    }));
+    {
+        covent::http::Request req(covent::http::Method::GET, "http://localhost:8001/test/value");
+        auto resp = loop.run_task(req());
+        EXPECT_EQ(resp->status(), 200);
+    }
+}
+
 TEST(HTTP_Server, ExplicitClient) {
     covent::Loop loop;
     covent::http::Server srv(8001, false);
@@ -158,6 +180,44 @@ TEST(HTTP_Server, Middleware) {
         covent::http::Request req(covent::http::Method::GET, "http://localhost:8001/test");
         auto resp = loop.run_task(req());
         EXPECT_EQ(resp->status(), 201);
+    }
+    {
+        covent::http::Request req(covent::http::Method::GET, "http://localhost:8001/test2");
+        auto resp = loop.run_task(req());
+        EXPECT_EQ(resp->status(), 401);
+    }
+}
+
+TEST(HTTP_Server, MiddlewareOnRoot) {
+    covent::Loop loop;
+    covent::http::Server srv(8001, false);
+    srv.add(std::make_unique<covent::http::Endpoint>("/"));
+    srv.add(std::make_unique<covent::http::Endpoint>("/test", [](evhttp_request * req) -> covent::task<int> {
+        evhttp_send_reply(req, 201, "OK", nullptr);
+        co_return 201;
+    }));
+    auto new_endpoint = std::make_unique<covent::http::Endpoint>("/test2", [](evhttp_request * req) -> covent::task<int> {
+        evhttp_send_reply(req, 200, "OK", nullptr);
+        co_return 200;
+    });
+    srv.root().add(std::make_unique<covent::http::Middleware>([](evhttp_request * req) -> covent::task<void> {
+        throw covent::http::exception::http_status(401, "Not allowed");
+    }));
+    srv.add(std::move(new_endpoint));
+    {
+        covent::http::Request req(covent::http::Method::GET, "http://localhost:8001/");
+        auto resp = loop.run_task(req());
+        EXPECT_EQ(resp->status(), 401);
+    }
+    {
+        covent::http::Request req(covent::http::Method::GET, "http://localhost:8001/not-found");
+        auto resp = loop.run_task(req());
+        EXPECT_EQ(resp->status(), 401);
+    }
+    {
+        covent::http::Request req(covent::http::Method::GET, "http://localhost:8001/test");
+        auto resp = loop.run_task(req());
+        EXPECT_EQ(resp->status(), 401);
     }
     {
         covent::http::Request req(covent::http::Method::GET, "http://localhost:8001/test2");

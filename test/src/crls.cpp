@@ -16,3 +16,12 @@ TEST(CrlCache, simple) {
     EXPECT_EQ(two, 200);
     EXPECT_NE(three, nullptr);
 }
+
+TEST(CrlCache, simple_real) {
+    covent::Loop loop;
+    std::string const uri = "http://c.pki.goog/wr2/GSyT1N4PBrg.crl";
+    auto [one, two, three] = loop.run_task(covent::pkix::CrlCache::crl(uri));
+    EXPECT_EQ(one, uri);
+    EXPECT_EQ(two, 200);
+    EXPECT_NE(three, nullptr);
+}

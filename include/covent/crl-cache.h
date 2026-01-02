@@ -18,7 +18,7 @@ namespace covent::pkix {
         static covent::task<std::tuple<std::string, int, X509_CRL *>> crl(std::string const &uri);
     private:
         static CrlCache & crl_cache();
-        covent::task<std::tuple<std::string, int, X509_CRL *>> do_crl(std::string const &uri);
+        covent::task<std::tuple<std::string, int, X509_CRL *>> do_crl(std::string uri);
     };
 }
 

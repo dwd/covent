@@ -35,10 +35,12 @@ public:
 
 Client::Client(Service & service, URI const & uri)
     : m_loop(covent::Loop::thread_loop()), m_service(service), m_uri(uri) {
+    m_log = Application::application().logger("HTTP::Client");
 }
 
 Client::Client(Service & service, std::string_view uri)
     : m_loop(covent::Loop::thread_loop()), m_service(service), m_uri(uri) {
+    m_log = Application::application().logger("HTTP::Client");
 }
 
 Request Client::request(Method method, URI const & uri, std::optional<std::string> body) {
@@ -68,7 +70,8 @@ covent::task<std::shared_ptr<Client::HTTPSession>> Client::connect(covent::dns::
             }
             success = true;
             break;
-        } catch (std::runtime_error &) {
+        } catch (std::runtime_error & e) {
+            m_log->info("Error {}, ignoring", e.what());
             // Loop around and try again.
         }
     }
@@ -80,31 +83,34 @@ covent::task<std::shared_ptr<Client::HTTPSession>> Client::connect(covent::dns::
     co_return session;
 }
 
-covent::task<std::shared_ptr<Client::HTTPSession>> Client::connect_v4(URI const & uri) const {
-    auto & resolver = m_service.entry(uri.host).resolver();
-    co_return co_await connect(co_await resolver.address_v4(uri.host), uri);
-}
-
-covent::task<std::shared_ptr<Client::HTTPSession>> Client::connect_v6(URI const & uri) const {
-    auto & resolver = m_service.entry(uri.host).resolver();
-    co_return co_await connect(co_await resolver.address_v6(uri.host), uri);
-}
-
 covent::task<std::unique_ptr<Response>> Client::send(Request const &r) {
     std::shared_ptr<Client::HTTPSession> session;
-    std::list<task<std::shared_ptr<HTTPSession>>> attempts; attempts.emplace_back(connect_v6(r.uri()));
+    std::list<task<std::shared_ptr<HTTPSession>>> attempts;
 
-    try {
-        session = co_await race(attempts, 0.1);
-    } catch (covent::race_timeout &) { // NOSONAR
-        // Carry on!
+    auto const & uri = r.uri();
+    auto & resolver = m_service.entry(uri.host).resolver();
+    auto [addr_v4, addr_v6] = co_await gather(resolver.address_v4(uri.host), resolver.address_v6(uri.host));
+
+    if (!addr_v6.addr.empty()) {
+        attempts.emplace_back(connect(addr_v6, uri));
+        try {
+            session = co_await race(attempts, 0.1, [](auto const & x) { return !!x; });
+        } catch (covent::race_timeout &) { // NOSONAR
+            // Carry on!
+        }
     }
     if (!session) {
-        if (attempts.rbegin()->done()) {
+        if (!attempts.empty() && attempts.rbegin()->done()) {
             attempts.clear();
         }
-        attempts.emplace_back(connect_v4(r.uri()));
-        session = co_await race(attempts, 5);
+        if (!addr_v4.addr.empty()) {
+            attempts.emplace_back(connect(addr_v4, uri));
+        }
+        try {
+            session = co_await race(attempts, 5, [](auto const & x) { return !!x; });
+        } catch (covent::race_timeout &) { // NOSONAR
+            // Carry on!
+        }
     }
     if (!session) {
         throw std::runtime_error("Connection failed");

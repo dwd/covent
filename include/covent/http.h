@@ -150,6 +150,7 @@ struct bufferevent;
             Service & m_service;
             URI m_uri;
             std::unique_ptr<Session> m_session;
+            std::shared_ptr<spdlog::logger> m_log;
         };
         class Request {
         public:
@@ -186,29 +187,51 @@ struct bufferevent;
         private:
             std::function<covent::task<void>(evhttp_request *)> m_handler;
         };
+        namespace detail {
+            struct TemplateSegment {
+                enum Type { Literal, Variable } type;
+                std::string name;      // variable name
+                std::string conv;      // converter name ("int", "str", "bool", "path")
+                std::string literal;   // literal text
+            };
+            struct CompiledTemplate {
+                std::string raw;
+                std::vector<TemplateSegment> segments;
+            };
+            CompiledTemplate compileTemplate(const std::string& templ);
+        }
         class Endpoint {
         public:
             virtual ~Endpoint() = default;
 
             explicit Endpoint(std::string path);
+            Endpoint(Method method, std::string path);
 
             template<typename T>
             requires std::is_invocable_r_v<covent::task<int>, T, evhttp_request *>
-            Endpoint(std::string path, T && t): m_path(std::move(path)), m_handler(t) {}
+            Endpoint(std::string path, T && t): m_path(std::move(path)), m_path_template(detail::compileTemplate(m_path)), m_handler([t](evhttp_request * req, std::unordered_map<std::string,std::string> const &){ return t(req);}) {}
 
-            covent::task<int> handler_low(struct evhttp_request * req);
-            virtual covent::task<int> handler(struct evhttp_request * req);
+            template<typename T>
+            requires std::is_invocable_r_v<covent::task<int>, T, evhttp_request *, std::unordered_map<std::string,std::string> const &>
+            Endpoint(std::string path, T && t): m_path(std::move(path)), m_path_template(detail::compileTemplate(m_path)), m_handler(t) {}
+
+            covent::task<int> handler_low(struct evhttp_request * req, std::unordered_map<std::string, std::string> const &);
+            virtual covent::task<int> handler(struct evhttp_request * req, std::unordered_map<std::string, std::string> const &);
             void add(std::unique_ptr<Endpoint> && child);
             void add(std::unique_ptr<Middleware> && child);
             [[nodiscard]] auto const & path() const {
                 return m_path;
             }
+            [[nodiscard]] auto const & path_template() const {
+                return m_path_template;
+            }
 
         private:
             const std::string m_path;
-            std::map<std::string, std::unique_ptr<Endpoint>, std::less<>> m_endpoints;
+            const detail::CompiledTemplate m_path_template;
+            std::list<std::unique_ptr<Endpoint>> m_endpoints;
             std::list<std::unique_ptr<Middleware>> m_middleware;
-            std::function<covent::task<int>(evhttp_request *)> m_handler;
+            std::function<covent::task<int>(evhttp_request *, std::unordered_map<std::string, std::string> const &)> m_handler;
         };
         class Server {
         public:

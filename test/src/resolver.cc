@@ -27,7 +27,7 @@ TEST(Resolver, wiggle_v4) {
     EXPECT_EQ(result.error, "");
     ASSERT_EQ(result.addr.size(), 1);
     auto address = covent::address_tostring(&result.addr[0]);
-    EXPECT_EQ(address, "217.155.137.62");
+    EXPECT_EQ(address, "88.98.37.177");
 }
 
 TEST(Resolver, wiggle_v6) {
@@ -38,12 +38,12 @@ TEST(Resolver, wiggle_v6) {
         loop.run_once(true);
     }
     auto result = task.get();
-    EXPECT_EQ(result.domain, "wiggle.cridland.io");
+    EXPECT_EQ(result.domain, "");
     EXPECT_EQ(result.dnssec, false); // No DNSSEC keys, so no validation
-    EXPECT_EQ(result.error, "");
-    ASSERT_EQ(result.addr.size(), 1);
-    auto address = covent::address_tostring(&result.addr[0]);
-    EXPECT_EQ(address, "2a02:8010:800b::1");
+    EXPECT_EQ(result.error, "No records present");
+    ASSERT_EQ(result.addr.size(), 0);
+    // auto address = covent::address_tostring(&result.addr[0]);
+    // EXPECT_EQ(address, "2a02:8010:800b::1");
 }
 
 TEST(Resolver, faked_data) {

@@ -51,6 +51,9 @@ class ConanApplication(ConanFile):
         requirements = self.conan_data.get('requirements', [])
         for requirement in requirements:
             self.requires(requirement)
+        hdr_requirements = self.conan_data.get('header-requirements', [])
+        for requirement in hdr_requirements:
+            self.requires(requirement, headers=True)
         if self.options.tests:
             self.requires("gtest/1.12.1")
 
