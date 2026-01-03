@@ -41,7 +41,7 @@ covent::task<std::unique_ptr<Response>> Request::operator()() {
 }
 
 void Request::send(Session & sess) const {
-    sess.write(m_request->render_request());
+    sess.write(m_request->render_request(method));
     sess.write(m_request->render_header());
     sess.write(m_request->render_body());
 }

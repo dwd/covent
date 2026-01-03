@@ -113,11 +113,34 @@ TEST(HTTP_Server, PathVars) {
         int ret = 200;
         if (params.find("variable") == params.end()) ret = 500;
         if (params.find("variable")->second != "value") ret = 418;
-        evhttp_send_reply(req, 200, "OK", nullptr);
+        evhttp_send_reply(req, ret, "OK", nullptr);
         co_return ret;
     }));
     {
         covent::http::Request req(covent::http::Method::GET, "http://localhost:8001/test/value");
+        auto resp = loop.run_task(req());
+        EXPECT_EQ(resp->status(), 200);
+    }
+}
+
+TEST(HTTP_Server, Posting) {
+    covent::Loop loop;
+    covent::http::Server srv(8001, false);
+    srv.add(std::make_unique<covent::http::Endpoint>("/"));
+    srv.add(std::make_unique<covent::http::Endpoint>("/test", [](evhttp_request * req) -> covent::task<int> {
+        evhttp_send_reply(req, 201, "OK", nullptr);
+        co_return 201;
+    }));
+    srv.add(std::make_unique<covent::http::Endpoint>("/test/{variable}", [](evhttp_request * req, std::unordered_map<std::string, std::string> const& params) -> covent::task<int> {
+        int ret = 200;
+        if (evhttp_request_get_command(req) != EVHTTP_REQ_POST) ret = 520;
+        else if (params.find("variable") == params.end()) ret = 500;
+        else if (params.find("variable")->second != "value") ret = 418;
+        evhttp_send_reply(req, ret, "OK", nullptr);
+        co_return ret;
+    }));
+    {
+        covent::http::Request req(covent::http::Method::POST, "http://localhost:8001/test/value");
         auto resp = loop.run_task(req());
         EXPECT_EQ(resp->status(), 200);
     }

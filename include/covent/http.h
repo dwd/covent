@@ -60,7 +60,7 @@ struct bufferevent;
             bool request = false;
 
             unsigned long process(std::string_view data);
-            [[nodiscard]] std::string render_request() const;
+            [[nodiscard]] std::string render_request(Method m) const;
             [[nodiscard]] std::string render_header() const;
             [[nodiscard]] std::string render_body() const;
         private:
