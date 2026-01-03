@@ -26,8 +26,7 @@ covent::task<std::tuple<std::string, int, X509_CRL *>> CrlCache::crl(std::string
     return CrlCache::crl_cache().do_crl(uri);
 }
 
-covent::task<std::tuple<std::string, int, X509_CRL *>> CrlCache::do_crl(std::string const &urix) {
-    std::string uri{urix}; // Destructively parsed
+covent::task<std::tuple<std::string, int, X509_CRL *>> CrlCache::do_crl(std::string uri) {
     // Step one: Look in cache.
     auto iter = m_crl_cache.find(uri);
     if (iter != m_crl_cache.end() && iter->second) {
@@ -43,22 +42,26 @@ covent::task<std::tuple<std::string, int, X509_CRL *>> CrlCache::do_crl(std::str
     }
     // Step three: Actually issue a new HTTP request:
     covent::http::Request req(covent::http::Method::GET, http::URI(uri));
-    auto response = co_await req();
-    int status_code = response->status();
-    // METRE_LOG(Log::INFO, "HTTP GET for " << uri << " returned " << status_code);
-    if ((status_code / 100) == 2) {
-        auto body = response->body();
-        auto body_start = reinterpret_cast<const unsigned char *>(body.data());
-        X509_CRL *data = d2i_X509_CRL(nullptr, &body_start, body.size());
-        if (data) {
-            co_return {uri, 200, data};
-        } else {
-            while (unsigned long ssl_err = ERR_get_error()) {
-                std::array<char, 1024> error_buf;
-                // METRE_LOG(Metre::Log::DEBUG, " :: " << ERR_error_string(ssl_err, error_buf.data()));
+    try {
+        auto response = co_await req();
+        int status_code = response->status();
+        // METRE_LOG(Log::INFO, "HTTP GET for " << uri << " returned " << status_code);
+        if ((status_code / 100) == 2) {
+            auto body = response->body();
+            auto body_start = reinterpret_cast<const unsigned char *>(body.data());
+            X509_CRL *data = d2i_X509_CRL(nullptr, &body_start, body.size());
+            if (data) {
+                co_return {uri, 200, data};
+            } else {
+                while (unsigned long ssl_err = ERR_get_error()) {
+                    std::array<char, 1024> error_buf;
+                    // METRE_LOG(Metre::Log::DEBUG, " :: " << ERR_error_string(ssl_err, error_buf.data()));
+                }
+                co_return {uri, 400, nullptr};
             }
-            co_return {uri, 400, nullptr};
         }
+        co_return {uri, status_code, nullptr};
+    } catch (std::runtime_error &e) {
+        co_return {uri, 500, nullptr};
     }
-    co_return {uri, status_code, nullptr};
 }

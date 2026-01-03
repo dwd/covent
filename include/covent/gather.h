@@ -25,6 +25,9 @@ namespace covent {
         requires task_type<element_type<Container const &>>;
     };
 
+    template<typename F, typename T>
+    concept bool_predicate = requires(F f, typename std::remove_reference_t<T>::value_type x) { { f(x) } -> std::convertible_to<bool>; };
+
     // Usage:
     // auto [ ... ] = co_await gather(task(), task2(), ...);
     template<typename ...Args>
@@ -62,8 +65,8 @@ namespace covent {
 
     // Usage:
     // R foo = race({task(), task2(), ...});
-    template<task_container C, timer_value T, typename R=C::value_type::value_type>
-    covent::task<R> race_container(C const & tasks, T timeout) {
+    template<task_container C, timer_value T, typename R=C::value_type::value_type, bool_predicate<typename C::value_type> F>
+    covent::task<R> race_container(C const & tasks, T timeout, F f = [](auto) { return true; }) {
         // Kick off by starting each task. If any finishes instantly, just return the result.
         covent::task<void> timer;
         for (auto & task : tasks) {
@@ -93,37 +96,38 @@ namespace covent {
         // So, one of the tasks has finished - look through and find it, and return the result.
         for (auto & task : tasks) {
             if (task.done()) {
-                co_return task.get();
+                R r = task.get();
+                if (f(r)) co_return r;
             }
         }
         throw race_timeout("Race timeout");
     }
 
     namespace detail {
-        template<task_type Task>
-        Task *return_first_done(Task & first) {
-            if (first.done()) {
+        template<task_type Task,  bool_predicate<Task> F>
+        Task *return_first_done(F & f, Task & first) {
+            if (first.done() && f(first.get())) {
                 return &first;
             }
             return nullptr;
         }
 
-        template<task_type Task, task_type ...Tasks>
-        Task *return_first_done(Task & first, Tasks &... rest) {
-            if (first.done()) {
+        template<task_type Task, task_type ...Tasks, bool_predicate<Task> F>
+        Task *return_first_done(F & f, Task & first, Tasks &... rest) {
+            if (first.done() && f(first.get())) {
                 return &first;
             }
-            return return_first_done(rest...);
+            return return_first_done(f, rest...);
         }
     }
 
-    template<typename R, task_type ...Tasks, timer_value T>
-    covent::task<R> race_pack(T timeout, Tasks &... tasks) {
+    template<typename R, task_type ...Tasks, timer_value T, bool_predicate<covent::task<R>> F>
+    covent::task<R> race_pack(T timeout, F && f, Tasks &... tasks) {
         // Kick off by starting each task. If any finishes instantly, just return the result.
         covent::task<void> timer;
         ((!*tasks.handle.promise().liveness && tasks.start()), ...);
         {
-            auto *winner = detail::return_first_done(tasks...);
+            auto *winner = detail::return_first_done(f, tasks...);
             if (winner) co_return winner->get();
         }
         // We now have a bunch of tasks which are suspended, so we only want to await the first.
@@ -143,35 +147,60 @@ namespace covent {
         ((tasks.handle.promise().parent = std::coroutine_handle<>{}), ...);
         // So, one of the tasks has finished - look through and find it, and return the result.
         {
-            auto *winner = detail::return_first_done(tasks...);
+            auto *winner = detail::return_first_done(f, tasks...);
             if (winner) co_return winner->get();
         }
         throw race_timeout("Race timeout");
     }
 
+    template<task_type Task, task_type ...Tasks, timer_value T, bool_predicate<Task> F>
+    auto race(Task task, Tasks... tasks, T timeout, F f) {
+        return race_pack<typename Task::value_type>(timeout, f, task, tasks...);
+    }
+    template<task_type Task, timer_value T, bool_predicate<Task> F>
+    auto race(Task task, T timeout, F f) {
+        return race_pack<typename Task::value_type>(timeout, f, task);
+    }
+    template<task_type Task, task_type ...Tasks, bool_predicate<Task> F>
+    auto race(Task task, Tasks... tasks, F f) {
+        return race_pack<typename Task::value_type>(detail::forever{}, f, task, tasks...);
+    }
+    template<task_type Task, bool_predicate<Task> F>
+    auto race(Task task, F f) {
+        return race_pack<typename Task::value_type>(detail::forever{}, f,task);
+    }
     template<task_type Task, task_type ...Tasks, timer_value T>
     auto race(Task task, Tasks... tasks, T timeout) {
-        return race_pack<typename Task::value_type>(timeout, task, tasks...);
+        return race_pack<typename Task::value_type>(timeout, [](auto) {return true;}, task, tasks...);
     }
     template<task_type Task, timer_value T>
     auto race(Task task, T timeout) {
-        return race_pack<typename Task::value_type>(timeout, task);
+        return race_pack<typename Task::value_type>(timeout, [](auto) {return true;}, task);
     }
     template<task_type Task, task_type ...Tasks>
     auto race(Task task, Tasks... tasks) {
-        return race_pack<typename Task::value_type>(detail::forever{}, task, tasks...);
+        return race_pack<typename Task::value_type>(detail::forever{}, [](auto) {return true;}, task, tasks...);
     }
     template<task_type Task>
     auto race(Task task) {
-        return race_pack<typename Task::value_type>(detail::forever{},task);
+        return race_pack<typename Task::value_type>(detail::forever{}, [](auto) {return true;},task);
+    }
+
+    template<task_container Task, timer_value T, bool_predicate<typename Task::value_type> F>
+    auto race(Task const & task, T timeout, F && f) {
+        return race_container(task, timeout, f);
+    }
+    template<task_container Task, bool_predicate<typename Task::value_type> F>
+    auto race(Task const & task, F && f) {
+        return race_container(task, detail::forever{}, f);
     }
     template<task_container Task, timer_value T>
     auto race(Task const & task, T timeout) {
-        return race_container(task, timeout);
+        return race_container(task, timeout, [](auto) {return true;});
     }
     template<task_container Task>
     auto race(Task const & task) {
-        return race_container(task, detail::forever{});
+        return race_container(task, detail::forever{}, [](auto) {return true;});
     }
 }
 
