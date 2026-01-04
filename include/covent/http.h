@@ -52,7 +52,6 @@ struct bufferevent;
             int status_code = -1; // response
             std::string status_text;
 
-            Method method = Method::GET; // request
             std::optional<URI> uri;
 
             std::string body;
