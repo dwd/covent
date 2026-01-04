@@ -61,7 +61,7 @@ GTEST_TEST(http_session, chunked_split) {
 
 GTEST_TEST(http_session, render) {
     covent::http::Message message("http://www.google.com");
-    EXPECT_EQ(message.render_request(), "GET / HTTP/1.1\r\n");
+    EXPECT_EQ(message.render_request(covent::http::Method::GET), "GET / HTTP/1.1\r\n");
     EXPECT_EQ(message.render_header(), "host: www.google.com\r\n\r\n");
     EXPECT_EQ(message.render_body(), "");
 }

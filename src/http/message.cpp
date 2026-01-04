@@ -204,9 +204,24 @@ unsigned long Message::process(std::string_view data) {
     return read;
 }
 
-std::string Message::render_request() const {
+std::string Message::render_request(Method method) const {
     if (!request) throw std::logic_error("Not a request");
-    return fmt::format("GET {} HTTP/1.1\r\n", uri->path);
+    const char * mstr = nullptr;
+    switch (method) {
+        case Method::GET:
+            mstr = "GET";
+            break;
+        case Method::POST:
+            mstr = "POST";
+            break;
+        case Method::DELETE:
+            mstr = "DELETE";
+            break;
+        case Method::PUT:
+            mstr = "PUT";
+            break;
+    }
+    return fmt::format("{} {} HTTP/1.1\r\n", mstr, uri->path);
 }
 
 std::string Message::render_header() const {
